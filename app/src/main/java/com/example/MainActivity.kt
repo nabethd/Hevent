@@ -25,8 +25,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -230,7 +230,7 @@ fun HebrewCalendarApp(
                         NavigationBarItem(
                             selected = selectedTab == 0,
                             onClick = { selectedTab = 0 },
-                            icon = { Icon(Icons.Default.EventNote, contentDescription = strings.navEvents) },
+                            icon = { Icon(Icons.AutoMirrored.Filled.EventNote, contentDescription = strings.navEvents) },
                             label = { Text(strings.navEvents, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,

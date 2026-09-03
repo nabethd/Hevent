@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cake
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -34,9 +36,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.AlertDialog
@@ -55,6 +55,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -621,7 +622,7 @@ fun AddEditEventDialog(
                                         )
                                         IconButton(onClick = { showHalachicInfo = !showHalachicInfo }) {
                                             Icon(
-                                                Icons.Default.HelpOutline,
+                                                Icons.AutoMirrored.Filled.HelpOutline,
                                                 contentDescription = "Halachic Info",
                                                 tint = MaterialTheme.colorScheme.secondary
                                             )
@@ -958,7 +959,7 @@ fun AddEditEventDialog(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
                         shape = RoundedCornerShape(50)
                     ) {
-                        Icon(Icons.Default.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (strings.isHe) "הוסף עוד אירוע לסנכרון יחד" else "Add another event to sync together",
@@ -1379,7 +1380,7 @@ fun CalendarDropdownPicker(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
-                .menuAnchor()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
         )
         ExposedDropdownMenu(
