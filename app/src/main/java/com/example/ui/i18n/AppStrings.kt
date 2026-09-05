@@ -45,8 +45,8 @@ class AppStrings(val lang: AppLanguage) {
 
     // Date Mode Selection
     val dateInputMode: String = if (isHe) "אופן הזנת התאריך המקורי" else "Date Input Method"
-    val modeGregorian: String = if (isHe) "תאריך לועזי (המרה אוטומטית)" else "Gregorian Date (Auto-convert)"
-    val modeHebrew: String = if (isHe) "תאריך עברי ישיר" else "Direct Hebrew Date"
+    val modeGregorian: String = if (isHe) "תאריך לועזי" else "Gregorian"
+    val modeHebrew: String = if (isHe) "תאריך עברי" else "Hebrew"
 
     val dayLabel: String = if (isHe) "יום" else "Day"
     val monthLabel: String = if (isHe) "חודש" else "Month"
@@ -62,6 +62,8 @@ class AppStrings(val lang: AppLanguage) {
     val yearsCountLabel: String = if (isHe) "משך תזמון החזרות:" else "Repeat duration:"
     val yearsSuffix: String = if (isHe) "שנים" else "years"
     val yearsNotice: String = if (isHe) "האירוע יחושב ויסונכרן לשנים אלו לפי כללי העיבור והלוח העברי" else "Calculated and synced for these years according to Jewish calendar rules"
+    val recurYearlyShort: String = if (isHe) "שנתי" else "Yearly"
+    val recurMonthlyShort: String = if (isHe) "חודשי" else "Monthly"
     val previewOccurrencesTitle: String = if (isHe) "תצוגה מקדימה של המועדים הקרובים" else "Preview of Upcoming Occurrences"
 
     // Leap Year Rules (Halacha)
@@ -182,6 +184,7 @@ class AppStrings(val lang: AppLanguage) {
 
     fun inMonths(months: Int): String = if (isHe) {
         when (months) {
+            1 -> "בעוד חודש"
             2 -> "בעוד חודשיים"
             else -> "בעוד $months חודשים"
         }
@@ -204,6 +207,24 @@ class AppStrings(val lang: AppLanguage) {
         "משהו השתבש. האירוע לא נשמר."
     else
         "Something went wrong. The event was not saved."
+    val eventUpdated: String = if (isHe) "האירוע עודכן" else "Event updated"
+    val editEventTitle: String = if (isHe) "עריכת אירוע" else "Edit Event"
+    val saveChanges: String = if (isHe) "שמור שינויים" else "Save Changes"
+    val edit: String = if (isHe) "ערוך" else "Edit"
+
+    // Sunset: the Hebrew day begins at nightfall, so a birth or death after it belongs to the
+    // next Hebrew day. Without this the yahrzeit is a day early.
+    val afterSunsetLabel: String = if (isHe) "אחרי השקיעה" else "After sunset"
+    val afterSunsetHint: String = if (isHe)
+        "היום העברי מתחיל בצאת הכוכבים. אם האירוע היה אחרי השקיעה, התאריך העברי הוא של היום שלמחרת."
+    else
+        "The Hebrew day begins at nightfall. If the event was after sunset, the Hebrew date is the following day."
+
+    val reminderLabel: String = if (isHe) "תזכורת" else "Reminder"
+    val reminderNone: String = if (isHe) "ללא" else "None"
+    val reminderDayBefore: String = if (isHe) "יום לפני, 09:00" else "Day before, 09:00"
+    val reminderWeekBefore: String = if (isHe) "שבוע לפני, 09:00" else "Week before, 09:00"
+
     val exportFailed: String = if (isHe) "ייצוא הקובץ נכשל" else "Export failed"
     val savingInProgress: String = if (isHe) "שומר..." else "Saving..."
     val noEventsToDelete: String = if (isHe) "לא נמצאו אירועים בשם זה" else "No events found with that name"

@@ -56,21 +56,26 @@ object HebrewCalendarEngine {
         else -> hebrewMonth
     }
 
-    /** Converts a Gregorian date (1-based month) to a rich [HebrewDateInfo]. */
-    fun fromGregorian(year: Int, month: Int, day: Int): HebrewDateInfo {
-        // Noon avoids any DST/rounding edge; the Hebrew day boundary is sunset, which the caller
-        // accounts for separately.
+    /**
+     * Converts a Gregorian date (1-based month) to a rich [HebrewDateInfo].
+     *
+     * The Hebrew day begins at nightfall, so a birth or death after sunset belongs to the *next*
+     * Hebrew day. [afterSunset] shifts the conversion accordingly while the reported Gregorian
+     * date stays the civil one the user entered — which is what they see on a certificate.
+     */
+    fun fromGregorian(year: Int, month: Int, day: Int, afterSunset: Boolean = false): HebrewDateInfo {
+        // Noon avoids any DST or rounding edge around the civil midnight boundary.
         val cal = Calendar.getInstance().apply {
             clear()
             set(year, month - 1, day.coerceIn(1, 31), 12, 0, 0)
         }
-        val jd = JewishDate(cal.time)
-        return toDateInfo(
-            jd,
-            cal.get(Calendar.YEAR),
-            cal.get(Calendar.MONTH) + 1,
-            cal.get(Calendar.DAY_OF_MONTH)
-        )
+        val civilYear = cal.get(Calendar.YEAR)
+        val civilMonth = cal.get(Calendar.MONTH) + 1
+        val civilDay = cal.get(Calendar.DAY_OF_MONTH)
+
+        if (afterSunset) cal.add(Calendar.DAY_OF_MONTH, 1)
+
+        return toDateInfo(JewishDate(cal.time), civilYear, civilMonth, civilDay)
     }
 
     /** Converts a Hebrew date to a rich [HebrewDateInfo], clamping day and month into range. */

@@ -28,6 +28,14 @@ data class HebrewEventEntity(
     val gregorianYear: Int, // e.g. 1993
     // Halachic leap year behaviour
     val leapYearRule: LeapYearRule = LeapYearRule.STANDARD_ADAR_II,
+    /**
+     * True when the origin moment was after nightfall, so the Hebrew date is the following day.
+     * Stored so an edit can restore the toggle, and so the Gregorian date shown stays the civil
+     * one the user actually entered.
+     */
+    val afterSunset: Boolean = false,
+    /** Minutes before the event to fire a reminder, or null for none. */
+    val reminderMinutes: Int? = null,
     /** How many years forward the user asked us to project. NOT the number of occurrences. */
     val yearsCount: Int = 20,
     /** How many occurrences that projection actually produced (BOTH-Adar years yield two). */

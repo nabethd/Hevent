@@ -170,6 +170,7 @@ class CalendarSyncManager(private val context: Context) {
         occurrences: List<CalculatedOccurrence>,
         syncTag: String,
         labels: SyncLabels,
+        reminderMinutes: Int? = null,
         noteFor: (CalculatedOccurrence) -> String? = { null }
     ): Int = withContext(Dispatchers.IO) {
         if (!hasCalendarPermission() || occurrences.isEmpty()) return@withContext 0
@@ -184,9 +185,13 @@ class CalendarSyncManager(private val context: Context) {
             for (occ in chunk) {
                 val index = ops.size
                 eventOpIndices.add(index)
-                ops.add(eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc).toInsertOp())
+                ops.add(
+                    eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc)
+                        .toInsertOp(hasReminder = reminderMinutes != null)
+                )
                 ops.add(extendedProp(index, APP_TAG_NAME, APP_TAG_VALUE))
                 ops.add(extendedProp(index, CUSTOM_EVENT_ID_NAME, syncTag))
+                if (reminderMinutes != null) ops.add(reminderOp(index, reminderMinutes))
             }
 
             try {
@@ -195,7 +200,9 @@ class CalendarSyncManager(private val context: Context) {
                 inserted += eventOpIndices.count { it < results.size && results[it].uri != null }
             } catch (e: Exception) {
                 Log.w(TAG, "Batch with extended properties failed; retrying without them", e)
-                inserted += insertWithoutExtendedProperties(calendarId, eventTitle, chunk, syncTag, labels, noteFor, utc)
+                inserted += insertWithoutExtendedProperties(
+                    calendarId, eventTitle, chunk, syncTag, labels, reminderMinutes, noteFor, utc
+                )
             }
         }
         inserted
@@ -207,15 +214,34 @@ class CalendarSyncManager(private val context: Context) {
         chunk: List<CalculatedOccurrence>,
         syncTag: String,
         labels: SyncLabels,
+        reminderMinutes: Int?,
         noteFor: (CalculatedOccurrence) -> String?,
         utc: Calendar
     ): Int {
         var inserted = 0
         for (occ in chunk) {
             try {
-                val values = eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc).toContentValues()
-                if (contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null) {
+                val values = eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc)
+                    .toContentValues(hasReminder = reminderMinutes != null)
+                val uri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+                if (uri != null) {
                     inserted++
+                    val eventId = uri.lastPathSegment?.toLongOrNull()
+                    if (reminderMinutes != null && eventId != null) {
+                        runCatching {
+                            contentResolver.insert(
+                                CalendarContract.Reminders.CONTENT_URI,
+                                ContentValues().apply {
+                                    put(CalendarContract.Reminders.EVENT_ID, eventId)
+                                    put(CalendarContract.Reminders.MINUTES, reminderMinutes)
+                                    put(
+                                        CalendarContract.Reminders.METHOD,
+                                        CalendarContract.Reminders.METHOD_ALERT
+                                    )
+                                }
+                            )
+                        }.onFailure { Log.w(TAG, "Reminder insert failed", it) }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Individual event insert failed", e)
@@ -263,7 +289,7 @@ class CalendarSyncManager(private val context: Context) {
         )
     }
 
-    private fun EventRow.toInsertOp(): ContentProviderOperation =
+    private fun EventRow.toInsertOp(hasReminder: Boolean): ContentProviderOperation =
         ContentProviderOperation.newInsert(CalendarContract.Events.CONTENT_URI)
             .withValue(CalendarContract.Events.CALENDAR_ID, calendarId)
             .withValue(CalendarContract.Events.TITLE, title)
@@ -274,9 +300,10 @@ class CalendarSyncManager(private val context: Context) {
             .withValue(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
             .withValue(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
             .withValue(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
+            .withValue(CalendarContract.Events.HAS_ALARM, if (hasReminder) 1 else 0)
             .build()
 
-    private fun EventRow.toContentValues(): ContentValues = ContentValues().apply {
+    private fun EventRow.toContentValues(hasReminder: Boolean): ContentValues = ContentValues().apply {
         put(CalendarContract.Events.CALENDAR_ID, calendarId)
         put(CalendarContract.Events.TITLE, title)
         put(CalendarContract.Events.DESCRIPTION, description)
@@ -286,7 +313,15 @@ class CalendarSyncManager(private val context: Context) {
         put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
         put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
         put(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
+        put(CalendarContract.Events.HAS_ALARM, if (hasReminder) 1 else 0)
     }
+
+    private fun reminderOp(eventBackRef: Int, minutes: Int): ContentProviderOperation =
+        ContentProviderOperation.newInsert(CalendarContract.Reminders.CONTENT_URI)
+            .withValueBackReference(CalendarContract.Reminders.EVENT_ID, eventBackRef)
+            .withValue(CalendarContract.Reminders.MINUTES, minutes)
+            .withValue(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+            .build()
 
     private fun extendedProp(backRef: Int, name: String, value: String): ContentProviderOperation =
         ContentProviderOperation.newInsert(CalendarContract.ExtendedProperties.CONTENT_URI)

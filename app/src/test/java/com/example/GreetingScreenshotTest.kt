@@ -60,6 +60,7 @@ class GreetingScreenshotTest {
                     events = mockEvents,
                     onAddEventClick = {},
                     onDeleteEvent = {},
+                    onEditEvent = {},
                     onExportIcs = {}
                 )
             }

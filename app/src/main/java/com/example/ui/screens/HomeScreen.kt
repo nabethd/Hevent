@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Schedule
@@ -79,6 +80,7 @@ import com.example.ui.theme.BirthdayContainer
 import com.example.ui.theme.GeneralEventAccent
 import com.example.ui.theme.GeneralEventContainer
 import com.example.ui.theme.HeroGradient
+import com.example.ui.theme.HeroGradientDark
 import com.example.ui.theme.HolidayAccent
 import com.example.ui.theme.HolidayContainer
 import com.example.ui.theme.YahrtzeitAccent
@@ -102,6 +104,7 @@ fun HomeScreen(
     events: List<HebrewEventEntity>,
     onAddEventClick: () -> Unit,
     onDeleteEvent: (HebrewEventEntity) -> Unit,
+    onEditEvent: (HebrewEventEntity) -> Unit,
     onExportIcs: (HebrewEventEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -126,7 +129,7 @@ fun HomeScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Brush.linearGradient(HeroGradient))
+                            .background(Brush.linearGradient(if (LocalIsDarkTheme.current) HeroGradientDark else HeroGradient))
                             .padding(22.dp)
                     ) {
                         Column {
@@ -381,6 +384,7 @@ fun HomeScreen(
                         event = event,
                         strings = strings,
                         onExportIcs = { onExportIcs(event) },
+                        onEditClick = { onEditEvent(event) },
                         onDeleteClick = { eventToDelete = event }
                     )
                 }
@@ -454,6 +458,7 @@ fun HebrewEventCard(
     event: HebrewEventEntity,
     strings: AppStrings,
     onExportIcs: () -> Unit,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -578,6 +583,20 @@ fun HebrewEventCard(
                                 )
                             }
                         }
+                    }
+
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("edit_event_${event.id}")
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = strings.edit,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
 
                     // Delete button

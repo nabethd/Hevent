@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,6 +111,11 @@ fun HebrewCalendarApp(
     // rememberSaveable, so a rotation does not reset the tab or discard a half-filled dialog.
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_EVENTS) }
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    // Id rather than the entity, so it survives process death and always resolves to fresh data.
+    var editingEventId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editingEvent = remember(editingEventId, events) {
+        editingEventId?.let { id -> events.firstOrNull { it.id == id } }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
@@ -131,7 +137,10 @@ fun HebrewCalendarApp(
                 is UiEvent.Message -> snackbarHostState.showSnackbar(event.text)
                 is UiEvent.Share ->
                     context.startActivity(Intent.createChooser(event.intent, event.chooserTitle))
-                UiEvent.Saved -> showAddDialog = false
+                UiEvent.Saved -> {
+                    showAddDialog = false
+                    editingEventId = null
+                }
             }
         }
     }
@@ -264,6 +273,10 @@ fun HebrewCalendarApp(
                         events = events,
                         onAddEventClick = { showAddDialog = true },
                         onDeleteEvent = viewModel::deleteEvent,
+                        onEditEvent = { event ->
+                            editingEventId = event.id
+                            showAddDialog = true
+                        },
                         onExportIcs = { event ->
                             viewModel.exportEventsToIcs(listOf(event), singleTitle = event.title)
                         }
@@ -305,6 +318,9 @@ fun HebrewCalendarApp(
                 }
 
                 if (showAddDialog) {
+                    // Keyed so switching between add and edit rebuilds the form state instead of
+                    // reusing the previous row's remembered values.
+                    key(editingEventId) {
                     AddEditEventDialog(
                         strings = strings,
                         availableCalendars = calendars,
@@ -312,6 +328,7 @@ fun HebrewCalendarApp(
                         isSyncing = isSyncing,
                         stagedEvents = stagedEvents,
                         prefillDate = prefillDate,
+                        editingEvent = editingEvent,
                         onRequestCalendarPermission = ::requestCalendarPermission,
                         onCreateNewCalendar = viewModel::createNewHebrewCalendar,
                         onStageEvent = viewModel::stageEvent,
@@ -319,12 +336,19 @@ fun HebrewCalendarApp(
                         onClearStaged = viewModel::clearStagedEvents,
                         onDismiss = {
                             showAddDialog = false
+                            editingEventId = null
                             viewModel.consumePrefillDate()
                         },
                         onSave = { draft, calendarId, calendarName, isIcsOnly ->
-                            viewModel.saveEvents(draft, calendarId, calendarName, isIcsOnly)
+                            val original = editingEvent
+                            if (original != null && draft != null) {
+                                viewModel.updateEvent(original, draft, calendarId, calendarName, isIcsOnly)
+                            } else {
+                                viewModel.saveEvents(draft, calendarId, calendarName, isIcsOnly)
+                            }
                         }
                     )
+                    }
                 }
             }
         }

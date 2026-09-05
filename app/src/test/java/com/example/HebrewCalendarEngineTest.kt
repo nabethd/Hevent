@@ -3,6 +3,7 @@ package com.example
 import com.example.domain.hebrew.HebrewCalendarEngine
 import com.example.domain.model.LeapYearRule
 import com.example.domain.model.OccurrenceNote
+import com.example.domain.model.ReminderOption
 import com.kosherjava.zmanim.hebrewcalendar.JewishDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -255,5 +256,65 @@ class HebrewCalendarEngineTest {
     fun `gregorianFormatted renders the civil date, not the Hebrew one`() {
         val info = HebrewCalendarEngine.fromGregorian(1993, 10, 13)
         assertEquals("13/10/1993", info.gregorianFormatted)
+    }
+}
+
+/** The Hebrew day begins at nightfall, which is the difference between a yahrzeit being right or a day early. */
+class SunsetConversionTest {
+
+    @Test
+    fun `after sunset advances the Hebrew date by one day`() {
+        val before = HebrewCalendarEngine.fromGregorian(1993, 10, 13, afterSunset = false)
+        val after = HebrewCalendarEngine.fromGregorian(1993, 10, 13, afterSunset = true)
+
+        assertEquals(28, before.hebrewDay)
+        assertEquals(29, after.hebrewDay)
+        assertEquals(before.hebrewMonth, after.hebrewMonth)
+    }
+
+    @Test
+    fun `after sunset keeps the civil date the user entered`() {
+        val after = HebrewCalendarEngine.fromGregorian(1993, 10, 13, afterSunset = true)
+
+        // The certificate still says the 13th; only the Hebrew reckoning moves.
+        assertEquals(1993, after.gregorianYear)
+        assertEquals(10, after.gregorianMonth)
+        assertEquals(13, after.gregorianDay)
+    }
+
+    @Test
+    fun `after sunset rolls over a Hebrew month end`() {
+        // 29 Elul is the eve of Rosh Hashanah: after sunset it becomes 1 Tishrei of the next year.
+        val eve = HebrewCalendarEngine.fromHebrew(5786, JewishDate.ELUL, 29)
+        val after = HebrewCalendarEngine.fromGregorian(
+            eve.gregorianYear, eve.gregorianMonth, eve.gregorianDay, afterSunset = true
+        )
+
+        assertEquals(JewishDate.TISHREI, after.hebrewMonth)
+        assertEquals(1, after.hebrewDay)
+        assertEquals(5787, after.hebrewYear)
+    }
+}
+
+/** Reminder offsets are counted backwards from an all-day event's midnight start. */
+class ReminderOptionTest {
+
+    @Test
+    fun `day before lands at 9am the previous day`() {
+        // 1440 minutes back is the previous midnight; 900 is nine hours later than that.
+        assertEquals(900, ReminderOption.DAY_BEFORE.minutes)
+        assertEquals(1440 - 900, 540) // 09:00
+    }
+
+    @Test
+    fun `week before is six further days back`() {
+        assertEquals(900 + 6 * 24 * 60, ReminderOption.WEEK_BEFORE.minutes)
+    }
+
+    @Test
+    fun `unknown or absent minutes resolve to none`() {
+        assertEquals(ReminderOption.NONE, ReminderOption.fromMinutes(null))
+        assertEquals(ReminderOption.NONE, ReminderOption.fromMinutes(12345))
+        assertEquals(ReminderOption.DAY_BEFORE, ReminderOption.fromMinutes(900))
     }
 }

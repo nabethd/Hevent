@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.AlertDialog
@@ -44,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -93,6 +95,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.domain.model.EventType
 import com.example.domain.model.RecurrenceType
+import com.example.domain.model.ReminderOption
+import com.example.data.db.HebrewEventEntity
 import com.example.domain.model.LeapYearRule
 import com.example.ui.i18n.AppStrings
 import com.example.ui.viewmodel.HebrewCalendarViewModel
@@ -109,6 +113,8 @@ fun AddEditEventDialog(
     isSyncing: Boolean,
     stagedEvents: List<HebrewCalendarViewModel.EventDraft>,
     prefillDate: HebrewDateInfo?,
+    /** Non-null puts the dialog in edit mode, seeded from this row. */
+    editingEvent: HebrewEventEntity? = null,
     onRequestCalendarPermission: () -> Unit,
     onCreateNewCalendar: suspend (String) -> Long?,
     onStageEvent: (HebrewCalendarViewModel.EventDraft) -> Unit,
@@ -127,24 +133,34 @@ fun AddEditEventDialog(
     // Defaults are today (or the day tapped in the calendar). They used to be hardcoded to
     // 13/10/1993 — the author's own birthday, shipped as every user's starting date.
     val todayInfo = remember { HebrewCalendarEngine.getToday() }
+    val isEditing = editingEvent != null
     val seed = prefillDate ?: todayInfo
 
     // rememberSaveable throughout: a rotation used to discard the entire form.
-    var eventTitle by rememberSaveable { mutableStateOf("") }
-    var eventType by rememberSaveable { mutableStateOf(EventType.BIRTHDAY) }
+    var eventTitle by rememberSaveable { mutableStateOf(editingEvent?.title ?: "") }
+    var eventType by rememberSaveable { mutableStateOf(editingEvent?.eventType ?: EventType.BIRTHDAY) }
     var isHebrewInputMode by rememberSaveable { mutableStateOf(false) }
 
-    var gDay by rememberSaveable { mutableIntStateOf(seed.gregorianDay) }
-    var gMonth by rememberSaveable { mutableIntStateOf(seed.gregorianMonth) }
-    var gYear by rememberSaveable { mutableIntStateOf(seed.gregorianYear) }
+    var gDay by rememberSaveable { mutableIntStateOf(editingEvent?.gregorianDay ?: seed.gregorianDay) }
+    var gMonth by rememberSaveable { mutableIntStateOf(editingEvent?.gregorianMonth ?: seed.gregorianMonth) }
+    var gYear by rememberSaveable { mutableIntStateOf(editingEvent?.gregorianYear ?: seed.gregorianYear) }
 
-    var hDay by rememberSaveable { mutableIntStateOf(seed.hebrewDay) }
-    var hMonth by rememberSaveable { mutableIntStateOf(seed.hebrewMonth) }
-    var hYear by rememberSaveable { mutableIntStateOf(seed.hebrewYear) }
+    var hDay by rememberSaveable { mutableIntStateOf(editingEvent?.hebrewDay ?: seed.hebrewDay) }
+    var hMonth by rememberSaveable { mutableIntStateOf(editingEvent?.hebrewMonth ?: seed.hebrewMonth) }
+    var hYear by rememberSaveable { mutableIntStateOf(editingEvent?.hebrewYear ?: seed.hebrewYear) }
 
-    var recurrenceType by rememberSaveable { mutableStateOf(RecurrenceType.YEARLY) }
-    var yearsDuration by rememberSaveable { mutableIntStateOf(20) }
-    var leapYearRule by rememberSaveable { mutableStateOf(LeapYearRule.STANDARD_ADAR_II) }
+    var afterSunset by rememberSaveable { mutableStateOf(editingEvent?.afterSunset ?: false) }
+    var reminder by rememberSaveable {
+        mutableStateOf(ReminderOption.fromMinutes(editingEvent?.reminderMinutes))
+    }
+
+    var recurrenceType by rememberSaveable {
+        mutableStateOf(editingEvent?.recurrenceType ?: RecurrenceType.YEARLY)
+    }
+    var yearsDuration by rememberSaveable { mutableIntStateOf(editingEvent?.yearsCount ?: 20) }
+    var leapYearRule by rememberSaveable {
+        mutableStateOf(editingEvent?.leapYearRule ?: LeapYearRule.STANDARD_ADAR_II)
+    }
     var showHalachicInfo by rememberSaveable { mutableStateOf(false) }
 
     var syncDestination by rememberSaveable {
@@ -205,7 +221,7 @@ fun AddEditEventDialog(
     val currentHebrewDateInfo by remember {
         derivedStateOf {
             if (!isHebrewInputMode) {
-                HebrewCalendarEngine.fromGregorian(gYear, gMonth, gDay)
+                HebrewCalendarEngine.fromGregorian(gYear, gMonth, gDay, afterSunset)
             } else {
                 HebrewCalendarEngine.fromHebrew(hYear, hMonth, hDay)
             }
@@ -239,13 +255,15 @@ fun AddEditEventDialog(
             recurrenceType = recurrenceType,
             hebrewDateInfo = currentHebrewDateInfo,
             leapYearRule = leapYearRule,
-            yearsCount = yearsDuration
+            yearsCount = yearsDuration,
+            afterSunset = afterSunset && !isHebrewInputMode,
+            reminderMinutes = reminder.minutes
         )
 
     fun performSave() {
         creationErrorFeedback = null
         val draft = currentDraft()
-        if (draft == null && stagedEvents.isEmpty()) {
+        if (draft == null && (isEditing || stagedEvents.isEmpty())) {
             titleError = strings.fillTitleError
             return
         }
@@ -323,7 +341,7 @@ fun AddEditEventDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = strings.addEventTitle,
+                        text = if (isEditing) strings.editEventTitle else strings.addEventTitle,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -430,7 +448,8 @@ fun AddEditEventDialog(
                                 shape = RoundedCornerShape(16.dp)
                             )
 
-                            // Quick Title Suggestions
+                            // Quick Title Suggestions — only useful when naming a new event.
+                            if (!isEditing) {
                             Spacer(modifier = Modifier.height(8.dp))
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -457,6 +476,7 @@ fun AddEditEventDialog(
                                     }
                                 }
                             }
+                            }
                         }
                     }
 
@@ -469,54 +489,32 @@ fun AddEditEventDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        // FlowRow, not a weighted Row: three equal thirds truncated every label
+                        // to its first word ("יום" instead of "יום הולדת").
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            FilterChip(
-                                selected = eventType == EventType.BIRTHDAY,
-                                onClick = { eventType = EventType.BIRTHDAY },
-                                shape = RoundedCornerShape(50),
-                                label = { Text(strings.typeBirthday, maxLines = 1) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (eventType == EventType.BIRTHDAY) Icons.Default.Check else Icons.Default.Cake,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilterChip(
-                                selected = eventType == EventType.YAHRZEIT,
-                                onClick = { eventType = EventType.YAHRZEIT },
-                                shape = RoundedCornerShape(50),
-                                label = { Text(strings.typeYahrzeit, maxLines = 1) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (eventType == EventType.YAHRZEIT) Icons.Default.Check else Icons.Default.Whatshot,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilterChip(
-                                selected = eventType == EventType.ANNIVERSARY,
-                                onClick = { eventType = EventType.ANNIVERSARY },
-                                shape = RoundedCornerShape(50),
-                                label = { Text(strings.typeAnniversary, maxLines = 1) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (eventType == EventType.ANNIVERSARY) Icons.Default.Check else Icons.Default.Favorite,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                modifier = Modifier.weight(1.1f)
-                            )
+                            listOf(
+                                Triple(EventType.BIRTHDAY, strings.typeBirthday, Icons.Default.Cake),
+                                Triple(EventType.YAHRZEIT, strings.typeYahrzeit, Icons.Default.Whatshot),
+                                Triple(EventType.ANNIVERSARY, strings.typeAnniversary, Icons.Default.Favorite)
+                            ).forEach { (type, label, icon) ->
+                                FilterChip(
+                                    selected = eventType == type,
+                                    onClick = { eventType = type },
+                                    shape = RoundedCornerShape(50),
+                                    label = { Text(label) },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (eventType == type) Icons.Default.Check else icon,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
 
@@ -632,6 +630,37 @@ fun AddEditEventDialog(
                                 }
 
                                 Spacer(modifier = Modifier.height(12.dp))
+
+                                if (!isHebrewInputMode) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable { afterSunset = !afterSunset }
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = afterSunset,
+                                            onCheckedChange = { afterSunset = it }
+                                        )
+                                        Column(modifier = Modifier.padding(start = 4.dp)) {
+                                            Text(
+                                                text = strings.afterSunsetLabel,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = strings.afterSunsetHint,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+
 
                                  // Dynamic Calculated Equivalent Card
                                 Surface(
@@ -874,6 +903,62 @@ fun AddEditEventDialog(
                         }
                     }
 
+                    // Reminder
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.NotificationsActive,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = strings.reminderLabel,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    listOf(
+                                        ReminderOption.NONE to strings.reminderNone,
+                                        ReminderOption.DAY_BEFORE to strings.reminderDayBefore,
+                                        ReminderOption.WEEK_BEFORE to strings.reminderWeekBefore
+                                    ).forEach { (option, label) ->
+                                        FilterChip(
+                                            selected = reminder == option,
+                                            onClick = { reminder = option },
+                                            shape = RoundedCornerShape(50),
+                                            label = { Text(label) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+
                     // Sync Destination Options
                     item {
                         Column {
@@ -1111,7 +1196,7 @@ fun AddEditEventDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Secondary action: "Add another event" to queue in batch
-                    OutlinedButton(
+                    if (!isEditing) OutlinedButton(
                         onClick = {
                             if (eventTitle.isBlank()) {
                                 titleError = strings.fillTitleError
@@ -1204,6 +1289,7 @@ fun AddEditEventDialog(
                                     count > 1 ->
                                         if (strings.isHe) "סנכרן $count אירועים ליומן"
                                         else "Sync $count Events to Calendar"
+                                    isEditing -> strings.saveChanges
                                     syncDestination == "ICS_ONLY" -> strings.saveAndExportIcsBtn
                                     else -> strings.saveAndSyncBtn
                                 }

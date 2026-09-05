@@ -170,7 +170,9 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
         val recurrenceType: RecurrenceType,
         val hebrewDateInfo: HebrewDateInfo,
         val leapYearRule: LeapYearRule = LeapYearRule.STANDARD_ADAR_II,
-        val yearsCount: Int = 20
+        val yearsCount: Int = 20,
+        val afterSunset: Boolean = false,
+        val reminderMinutes: Int? = null
     )
 
     fun stageEvent(draft: EventDraft) { _stagedEvents.value = _stagedEvents.value + draft }
@@ -255,6 +257,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             occurrences = occurrences,
                             syncTag = syncTag,
                             labels = syncLabels(),
+                            reminderMinutes = draft.reminderMinutes,
                             noteFor = { localStrings.noteText(it) }
                         )
                         totalSynced += syncedCount
@@ -276,6 +279,8 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             // yearsCount is what the user asked for; occurrenceCount is what it produced.
                             yearsCount = draft.yearsCount,
                             occurrenceCount = occurrences.size,
+                            afterSunset = draft.afterSunset,
+                            reminderMinutes = draft.reminderMinutes,
                             syncTag = syncTag,
                             targetCalendarId = targetCalendarId.takeUnless { isIcsOnly },
                             targetCalendarName = targetCalendarName.takeUnless { isIcsOnly },
@@ -283,7 +288,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             syncedEventsCount = syncedCount
                         )
                     )
-                    icsEvents += IcsEvent(draft.title, syncTag, occurrences)
+                    icsEvents += IcsEvent(draft.title, syncTag, occurrences, draft.reminderMinutes)
                 }
 
                 clearStagedEvents()
@@ -312,6 +317,88 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
             } catch (e: Exception) {
                 // Never surface a raw exception message to the user.
                 Log.e(TAG, "Saving events failed", e)
+                _events.send(UiEvent.Message(localStrings.genericError))
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
+
+    /**
+     * Replaces an existing event. The old calendar rows are removed by their own sync tag and a
+     * fresh set is written, because the dates themselves may have moved.
+     */
+    fun updateEvent(
+        original: HebrewEventEntity,
+        draft: EventDraft,
+        targetCalendarId: Long?,
+        targetCalendarName: String?,
+        isIcsOnly: Boolean
+    ) {
+        if (_isSyncing.value) return
+        viewModelScope.launch {
+            _isSyncing.value = true
+            val localStrings = strings
+            try {
+                if (calendarSyncManager.hasCalendarPermission()) {
+                    calendarSyncManager.deleteSyncedEvents(
+                        syncTag = original.syncTag,
+                        title = original.title,
+                        calendarId = original.targetCalendarId
+                    )
+                }
+
+                val occurrences = occurrencesFor(
+                    draft.recurrenceType,
+                    draft.hebrewDateInfo.hebrewDay,
+                    draft.hebrewDateInfo.hebrewMonth,
+                    draft.hebrewDateInfo.hebrewYear,
+                    draft.leapYearRule,
+                    draft.yearsCount.coerceAtLeast(1)
+                )
+                val syncTag = CalendarSyncManager.newSyncTag()
+
+                var syncedCount = 0
+                if (!isIcsOnly && targetCalendarId != null && calendarSyncManager.hasCalendarPermission()) {
+                    syncedCount = calendarSyncManager.insertEvents(
+                        calendarId = targetCalendarId,
+                        eventTitle = draft.title,
+                        occurrences = occurrences,
+                        syncTag = syncTag,
+                        labels = syncLabels(),
+                        reminderMinutes = draft.reminderMinutes,
+                        noteFor = { localStrings.noteText(it) }
+                    )
+                }
+
+                repository.updateEvent(
+                    original.copy(
+                        title = draft.title,
+                        eventType = draft.eventType,
+                        recurrenceType = draft.recurrenceType,
+                        hebrewDay = draft.hebrewDateInfo.hebrewDay,
+                        hebrewMonth = draft.hebrewDateInfo.hebrewMonth,
+                        hebrewYear = draft.hebrewDateInfo.hebrewYear,
+                        hebrewDateFormatted = draft.hebrewDateInfo.formattedHe,
+                        gregorianDay = draft.hebrewDateInfo.gregorianDay,
+                        gregorianMonth = draft.hebrewDateInfo.gregorianMonth,
+                        gregorianYear = draft.hebrewDateInfo.gregorianYear,
+                        leapYearRule = draft.leapYearRule,
+                        yearsCount = draft.yearsCount,
+                        occurrenceCount = occurrences.size,
+                        afterSunset = draft.afterSunset,
+                        reminderMinutes = draft.reminderMinutes,
+                        syncTag = syncTag,
+                        targetCalendarId = targetCalendarId.takeUnless { isIcsOnly },
+                        targetCalendarName = targetCalendarName.takeUnless { isIcsOnly },
+                        isSyncedToCalendar = syncedCount > 0,
+                        syncedEventsCount = syncedCount
+                    )
+                )
+                _events.send(UiEvent.Message(localStrings.eventUpdated))
+                _events.send(UiEvent.Saved)
+            } catch (e: Exception) {
+                Log.e(TAG, "Updating event failed", e)
                 _events.send(UiEvent.Message(localStrings.genericError))
             } finally {
                 _isSyncing.value = false
@@ -379,7 +466,8 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             IcsEvent(
                                 title = it.title,
                                 uidSeed = it.syncTag ?: "row-${it.id}",
-                                occurrences = occurrencesFor(it)
+                                occurrences = occurrencesFor(it),
+                                reminderMinutes = it.reminderMinutes
                             )
                         },
                         fileName = name,
