@@ -271,7 +271,13 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                     )
                     _statusMessage.value = strings.icsExportReady
                 } else {
-                    _statusMessage.value = if (totalSynced > 0) strings.syncSuccess else null
+                    _statusMessage.value = if (totalSynced > 0) {
+                        "${strings.syncSuccess} ($totalSynced)"
+                    } else if (targetCalendarId != null) {
+                        if (strings.isHe) "האירועים נשמרו באפליקציה (סנכרון היומן לא הושלם)" else "Events saved in app (calendar sync not completed)"
+                    } else {
+                        strings.eventSaved
+                    }
                 }
 
                 onComplete(true, shareIntent)

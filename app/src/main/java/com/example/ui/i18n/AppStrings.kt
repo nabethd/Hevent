@@ -88,10 +88,24 @@ class AppStrings(val lang: AppLanguage) {
 
     val selectCalendar: String = if (isHe) "בחר יומן יעד" else "Select Target Calendar"
     val permissionRequiredMsg: String = if (isHe)
-        "נדרשת הרשאת גישה ליומן כדי להוסיף את המופעים ישירות ליומן המכשיר."
+        "נדרשת הרשאת גישה ליומן כדי להוסיף את המופעים ישירות ליומן Google / המכשיר."
     else
-        "Calendar permission is required to add occurrences directly into device calendar."
-    val grantPermissionBtn: String = if (isHe) "מתן הרשאות יומן" else "Grant Calendar Permission"
+        "Calendar permission is required to add occurrences directly into Google / device calendar."
+    val grantPermissionBtn: String = if (isHe) "מתן הרשאות יומן Google" else "Grant Calendar Permission"
+
+    // Google Calendar connection note
+    val googleCalendarNotice: String = if (isHe)
+        "סנכרון ליומן Google מתבצע באופן מאובטח באמצעות חשבון Google המחובר למכשירך. אין צורך בהתחברות נוספת בדפדפן."
+    else
+        "Syncing to Google Calendar operates securely through your device's active Google account. No browser login needed."
+    val calendarCreateErrorFallback: String = if (isHe)
+        "יצירת יומן נפרד אינה נתמכת במכשיר זה עקב מדיניות האבטחה של אנדרואיד. בחרנו עבורך סנכרון ישיר ליומן Google הקיים."
+    else
+        "Creating a standalone calendar is restricted by Android security on this device. Switched to your active Google/Device calendar."
+    val calendarCreateFailedMsg: String = if (isHe)
+        "יצירת יומן מקומי נכשלה (מגבלת מערכת אנדרואיד במכשיר זה). מומלץ לסנכרן ליומן Google הקיים או לייצא קובץ ICS."
+    else
+        "Creating local calendar failed (Android device policy). Please sync to existing Google Calendar or export as ICS."
 
     // Multi-event batching in Dialog
     val addAnotherEventBtn: String = if (isHe) "+ הוסף אירוע נוסף לסבב" else "+ Add another event to batch"
@@ -146,6 +160,7 @@ class AppStrings(val lang: AppLanguage) {
 
     // Toasts & Notifications
     val syncSuccess: String = if (isHe) "אירועים סונכרנו בהצלחה ליומן!" else "Events successfully synced to calendar!"
+    val eventSaved: String = if (isHe) "האירוע נשמר בהצלחה" else "Event saved successfully"
     val icsExportReady: String = if (isHe) "קובץ ICS מוכן לשיתוף וייבוא" else "ICS file is ready for sharing and import"
     val deleteSuccess: String = if (isHe) "האירוע נמחק בהצלחה" else "Event deleted successfully"
     val eventsDeletedFromCal: String = if (isHe) "אירועים נמחקו מיומן המכשיר" else "events deleted from device calendar"

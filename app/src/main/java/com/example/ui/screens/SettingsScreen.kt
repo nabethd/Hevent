@@ -253,18 +253,37 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         if (availableCalendars.isEmpty()) {
-                            Text(
-                                text = "לא זוהו יומנים זמינים במכשיר כעת",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = if (strings.isHe) "לא זוהו יומנים פעילים במכשיר" else "No active calendars found on device",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = if (strings.isHe)
+                                            "וודא שחשבון Google מחובר במכשיר בהגדרות המערכת. תוכל תמיד לייצא קובץ ICS שיפתח ביומן Google ישירות."
+                                        else
+                                            "Ensure a Google account is active in device settings. You can always export an ICS file to import into Google Calendar directly.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 availableCalendars.forEach { cal ->
+                                    val isGoogle = cal.accountType.contains("google", ignoreCase = true)
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant,
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                        color = if (isGoogle) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant,
+                                        border = BorderStroke(1.dp, if (isGoogle) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
@@ -275,19 +294,37 @@ fun SettingsScreen(
                                             Icon(
                                                 Icons.Default.Event,
                                                 contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(18.dp)
+                                                tint = if (isGoogle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(20.dp)
                                             )
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = cal.displayName,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    Text(
+                                                        text = cal.displayName,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    if (isGoogle) {
+                                                        Surface(
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            shape = RoundedCornerShape(4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = "Google",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                                 if (cal.accountName.isNotBlank()) {
                                                     Text(
-                                                        text = "${cal.accountName} (${cal.accountType})",
+                                                        text = cal.accountName,
                                                         style = MaterialTheme.typography.bodySmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
@@ -297,6 +334,13 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = strings.googleCalendarNotice,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -347,6 +391,8 @@ fun SettingsScreen(
                                     if (id != null) {
                                         calendarCreatedFeedback = strings.calendarCreatedSuccess
                                         newCalendarName = ""
+                                    } else {
+                                        calendarCreatedFeedback = strings.calendarCreateFailedMsg
                                     }
                                 }
                             },
@@ -372,7 +418,10 @@ fun SettingsScreen(
                             Text(
                                 text = calendarCreatedFeedback ?: "",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = if (calendarCreatedFeedback == strings.calendarCreatedSuccess)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }

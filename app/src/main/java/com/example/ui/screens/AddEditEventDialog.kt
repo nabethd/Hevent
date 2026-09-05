@@ -153,6 +153,22 @@ fun AddEditEventDialog(
 
     var isCreatingCal by remember { mutableStateOf(false) }
     var titleError by remember { mutableStateOf<String?>(null) }
+    var creationErrorFeedback by remember { mutableStateOf<String?>(null) }
+
+    // Automatically select the best calendar (Google Calendar or primary) when calendars become available
+    LaunchedEffect(availableCalendars, hasCalendarPermission) {
+        if (availableCalendars.isNotEmpty()) {
+            if (selectedCalendarId == 0L || availableCalendars.none { it.id == selectedCalendarId }) {
+                val best = availableCalendars.find { it.accountType.contains("google", ignoreCase = true) }
+                    ?: availableCalendars.find { it.isPrimary }
+                    ?: availableCalendars.first()
+                selectedCalendarId = best.id
+            }
+            if (syncDestination == "ICS_ONLY" && hasCalendarPermission) {
+                syncDestination = "EXISTING_CAL"
+            }
+        }
+    }
 
     // Synchronize conversions
     val currentHebrewDateInfo by remember {
@@ -358,47 +374,52 @@ fun AddEditEventDialog(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             FilterChip(
                                 selected = eventType == "BIRTHDAY",
                                 onClick = { eventType = "BIRTHDAY" },
                                 shape = RoundedCornerShape(50),
-                                label = { Text(strings.typeBirthday) },
+                                label = { Text(strings.typeBirthday, maxLines = 1) },
                                 leadingIcon = {
                                     Icon(
                                         if (eventType == "BIRTHDAY") Icons.Default.Check else Icons.Default.Cake,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
-                                }
+                                },
+                                modifier = Modifier.weight(1f)
                             )
                             FilterChip(
                                 selected = eventType == "YAHRZEIT",
                                 onClick = { eventType = "YAHRZEIT" },
                                 shape = RoundedCornerShape(50),
-                                label = { Text(strings.typeYahrzeit) },
+                                label = { Text(strings.typeYahrzeit, maxLines = 1) },
                                 leadingIcon = {
                                     Icon(
                                         if (eventType == "YAHRZEIT") Icons.Default.Check else Icons.Default.Whatshot,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
-                                }
+                                },
+                                modifier = Modifier.weight(1f)
                             )
                             FilterChip(
                                 selected = eventType == "ANNIVERSARY",
                                 onClick = { eventType = "ANNIVERSARY" },
                                 shape = RoundedCornerShape(50),
-                                label = { Text(strings.typeAnniversary) },
+                                label = { Text(strings.typeAnniversary, maxLines = 1) },
                                 leadingIcon = {
                                     Icon(
                                         if (eventType == "ANNIVERSARY") Icons.Default.Check else Icons.Default.Favorite,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
-                                }
+                                },
+                                modifier = Modifier.weight(1.1f)
                             )
                         }
                     }
@@ -768,7 +789,7 @@ fun AddEditEventDialog(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Option 1: Existing Calendar
+                            // Option 1: Existing Calendar (Recommended for Google Calendar)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -780,7 +801,14 @@ fun AddEditEventDialog(
                                     onClick = { syncDestination = "EXISTING_CAL" }
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(strings.destDeviceCalendar, style = MaterialTheme.typography.bodyMedium)
+                                Column {
+                                    Text(strings.destDeviceCalendar, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = if (strings.isHe) "מומלץ עבור סנכרון ל-Google Calendar" else "Recommended for Google Calendar sync",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
 
                             if (syncDestination == "EXISTING_CAL") {
@@ -816,6 +844,18 @@ fun AddEditEventDialog(
                                         onSelect = { selectedCalendarId = it },
                                         modifier = Modifier.padding(start = 32.dp, top = 4.dp)
                                     )
+                                } else {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.padding(start = 32.dp, top = 4.dp, end = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = if (strings.isHe) "טוען יומנים זמינים..." else "Loading available calendars...",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.padding(8.dp)
+                                        )
+                                    }
                                 }
                             }
 
@@ -831,10 +871,44 @@ fun AddEditEventDialog(
                                     onClick = { syncDestination = "NEW_CAL" }
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(strings.destNewCalendar, style = MaterialTheme.typography.bodyMedium)
+                                Column {
+                                    Text(strings.destNewCalendar, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        text = if (strings.isHe) "יומן מקומי נפרד במכשיר (לא יומן ענן של גוגל)" else "Local device calendar (separate from Google cloud)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
 
                             if (syncDestination == "NEW_CAL") {
+                                if (!hasCalendarPermission) {
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                                        ),
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 32.dp, top = 4.dp, bottom = 8.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(
+                                                text = strings.permissionRequiredMsg,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Button(
+                                                onClick = onRequestCalendarPermission,
+                                                shape = RoundedCornerShape(50),
+                                                modifier = Modifier.testTag("grant_permission_new_cal_button")
+                                            ) {
+                                                Text(strings.grantPermissionBtn)
+                                            }
+                                        }
+                                    }
+                                }
+
                                 OutlinedTextField(
                                     value = newCalendarName,
                                     onValueChange = { newCalendarName = it },
@@ -843,6 +917,12 @@ fun AddEditEventDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(start = 32.dp, top = 4.dp)
+                                )
+                                Text(
+                                    text = if (strings.isHe) "שימו לב: יצירת יומן חדש יוצרת יומן במכשיר. לסנכרון שמופיע בכל המכשירים בחשבון גוגל שלכם, בחרו באפשרות הראשונה (סנכרון ישיר ליומן Google)." else "Note: creating a new calendar creates a local calendar on this device. To sync with your Google account across devices, choose the first option above.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 32.dp, top = 4.dp, end = 8.dp)
                                 )
                             }
 
@@ -968,6 +1048,28 @@ fun AddEditEventDialog(
                         )
                     }
 
+                    if (creationErrorFeedback != null) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                Text(
+                                    text = creationErrorFeedback ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -983,6 +1085,9 @@ fun AddEditEventDialog(
 
                         Button(
                             onClick = {
+                                // Clear previous feedback
+                                creationErrorFeedback = null
+
                                 // Gather all events: queued items plus current form if title is filled
                                 val allEventsToSave = stagedEvents.toMutableList()
                                 if (eventTitle.isNotBlank()) {
@@ -1003,6 +1108,12 @@ fun AddEditEventDialog(
                                     return@Button
                                 }
 
+                                // Check permission if syncing to a calendar
+                                if (syncDestination != "ICS_ONLY" && !hasCalendarPermission) {
+                                    onRequestCalendarPermission()
+                                    return@Button
+                                }
+
                                 if (syncDestination == "NEW_CAL") {
                                     coroutineScope.launch {
                                         isCreatingCal = true
@@ -1015,6 +1126,31 @@ fun AddEditEventDialog(
                                                 newCalendarName,
                                                 false
                                             )
+                                        } else {
+                                            // Fallback: If device policy restricts creating a local calendar,
+                                            // automatically sync to existing Google/Device calendar or export ICS!
+                                            val fallbackCal = availableCalendars.find { it.accountType.contains("google", ignoreCase = true) }
+                                                ?: availableCalendars.find { it.isPrimary }
+                                                ?: availableCalendars.firstOrNull()
+
+                                            if (fallbackCal != null) {
+                                                creationErrorFeedback = strings.calendarCreateErrorFallback
+                                                selectedCalendarId = fallbackCal.id
+                                                onSaveBatch(
+                                                    allEventsToSave,
+                                                    fallbackCal.id,
+                                                    fallbackCal.displayName,
+                                                    false
+                                                )
+                                            } else {
+                                                creationErrorFeedback = strings.calendarCreateFailedMsg
+                                                onSaveBatch(
+                                                    allEventsToSave,
+                                                    null,
+                                                    null,
+                                                    true
+                                                )
+                                            }
                                         }
                                     }
                                 } else {
@@ -1388,11 +1524,33 @@ fun CalendarDropdownPicker(
             onDismissRequest = { expanded = false }
         ) {
             calendars.forEach { cal ->
+                val isGoogle = cal.accountType.contains("google", ignoreCase = true)
                 DropdownMenuItem(
                     text = {
-                        Column {
-                            Text(cal.displayName, fontWeight = FontWeight.Bold)
-                            Text(cal.accountName, style = MaterialTheme.typography.bodySmall)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(cal.displayName, fontWeight = FontWeight.Bold)
+                                if (cal.accountName.isNotBlank()) {
+                                    Text(cal.accountName, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            if (isGoogle) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Google",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
                         }
                     },
                     onClick = {
