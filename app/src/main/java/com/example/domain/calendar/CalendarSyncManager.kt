@@ -2,46 +2,62 @@ package com.example.domain.calendar
 
 import android.content.ContentProviderOperation
 import android.content.ContentResolver
-import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
-import android.database.Cursor
-import android.net.Uri
 import android.provider.CalendarContract
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.domain.model.CalculatedOccurrence
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.TimeZone
+import java.util.UUID
+
+/** Language-dependent text embedded in the calendar rows we create. */
+data class SyncLabels(
+    val hebrewDateLabel: String,
+    val createdBy: String
+)
 
 class CalendarSyncManager(private val context: Context) {
 
     companion object {
+        private const val TAG = "CalendarSyncManager"
+
         const val APP_TAG_NAME = "app"
         const val APP_TAG_VALUE = "hebrew_calendar_sync"
         const val CUSTOM_EVENT_ID_NAME = "hebrew_event_id"
+
+        private const val BATCH_SIZE = 20
+        private const val ID_CHUNK = 40
+
+        /** Hyphens only — no `_`, which is a wildcard in SQL LIKE. */
+        fun newSyncTag(): String = "hcs-" + UUID.randomUUID().toString()
+
+        /** Escapes the LIKE metacharacters so a tag can never match more rows than intended. */
+        private fun escapeLike(value: String): String =
+            value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     }
 
     private val contentResolver: ContentResolver = context.contentResolver
 
     fun hasCalendarPermission(): Boolean {
-        val readPerm = ContextCompat.checkSelfPermission(
+        val read = ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.READ_CALENDAR
         ) == PackageManager.PERMISSION_GRANTED
-        val writePerm = ContextCompat.checkSelfPermission(
+        val write = ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.WRITE_CALENDAR
         ) == PackageManager.PERMISSION_GRANTED
-        return readPerm && writePerm
+        return read && write
     }
 
     suspend fun getAvailableCalendars(): List<DeviceCalendarInfo> = withContext(Dispatchers.IO) {
         if (!hasCalendarPermission()) return@withContext emptyList()
 
-        val calendars = mutableListOf<DeviceCalendarInfo>()
         val projection = arrayOf(
             CalendarContract.Calendars._ID,
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
@@ -52,103 +68,64 @@ class CalendarSyncManager(private val context: Context) {
             CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL
         )
 
-        var cursor: Cursor? = null
+        val calendars = mutableListOf<DeviceCalendarInfo>()
         try {
-            cursor = contentResolver.query(
+            contentResolver.query(
                 CalendarContract.Calendars.CONTENT_URI,
                 projection,
                 null,
                 null,
                 "${CalendarContract.Calendars.IS_PRIMARY} DESC, ${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} ASC"
-            )
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
+                val accNameCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
+                val accTypeCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_TYPE)
+                val colorCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_COLOR)
+                val primaryCol = cursor.getColumnIndex(CalendarContract.Calendars.IS_PRIMARY)
+                val accessCol = cursor.getColumnIndex(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
 
-            cursor?.let {
-                val idCol = it.getColumnIndexOrThrow(CalendarContract.Calendars._ID)
-                val nameCol = it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
-                val accNameCol = it.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
-                val accTypeCol = it.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_TYPE)
-                val colorCol = it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_COLOR)
-                val primaryCol = it.getColumnIndex(CalendarContract.Calendars.IS_PRIMARY)
-                val accessCol = it.getColumnIndex(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
+                while (cursor.moveToNext()) {
+                    val accessLevel = if (accessCol >= 0) cursor.getInt(accessCol)
+                    else CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
+                    if (accessLevel < CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) continue
 
-                while (it.moveToNext()) {
-                    val id = it.getLong(idCol)
-                    val name = it.getString(nameCol) ?: "Calendar $id"
-                    val accName = it.getString(accNameCol) ?: ""
-                    val accType = it.getString(accTypeCol) ?: ""
-                    val color = it.getInt(colorCol)
-                    val isPrimary = if (primaryCol >= 0) it.getInt(primaryCol) == 1 else false
-                    val isLocal = accType == CalendarContract.ACCOUNT_TYPE_LOCAL
-                    val accessLevel = if (accessCol >= 0) it.getInt(accessCol) else CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
-
-                    // Only include calendars that are writable (access level >= CONTRIBUTOR)
-                    if (accessLevel >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) {
-                        calendars.add(
-                            DeviceCalendarInfo(
-                                id = id,
-                                displayName = name,
-                                accountName = accName,
-                                accountType = accType,
-                                color = color,
-                                isPrimary = isPrimary,
-                                isLocal = isLocal
-                            )
+                    val id = cursor.getLong(idCol)
+                    val accType = cursor.getString(accTypeCol) ?: ""
+                    calendars.add(
+                        DeviceCalendarInfo(
+                            id = id,
+                            displayName = cursor.getString(nameCol) ?: "Calendar $id",
+                            accountName = cursor.getString(accNameCol) ?: "",
+                            accountType = accType,
+                            color = cursor.getInt(colorCol),
+                            isPrimary = if (primaryCol >= 0) cursor.getInt(primaryCol) == 1 else false,
+                            isLocal = accType == CalendarContract.ACCOUNT_TYPE_LOCAL
                         )
-                    }
+                    )
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            cursor?.close()
+            Log.e(TAG, "Failed to query device calendars", e)
         }
-
         calendars
     }
 
-    /**
-     * Creates a new dedicated local calendar for Hebrew Events.
-     */
-    suspend fun createNewHebrewCalendar(displayName: String = "אירועים עבריים (Hebrew Events)"): Long? =
-        withContext(Dispatchers.IO) {
-            if (!hasCalendarPermission()) return@withContext null
+    /** Creates a dedicated local calendar. Returns null if the device policy forbids it. */
+    suspend fun createNewHebrewCalendar(displayName: String): Long? = withContext(Dispatchers.IO) {
+        if (!hasCalendarPermission()) return@withContext null
 
-            // 1. Try standard LOCAL sync adapter account
+        // Some OEM providers reject a synthetic account name but accept the package name, so we
+        // try both before giving up.
+        for (accountName in listOf("HebrewCalendarSyncApp", context.packageName)) {
             try {
-                val accountName = "HebrewCalendarSyncApp"
                 val uri = CalendarContract.Calendars.CONTENT_URI.buildUpon()
                     .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
                     .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, accountName)
-                    .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
-                    .build()
-
-                val values = ContentValues().apply {
-                    put(CalendarContract.Calendars.ACCOUNT_NAME, accountName)
-                    put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
-                    put(CalendarContract.Calendars.NAME, "HebrewCalendarSync")
-                    put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, displayName)
-                    put(CalendarContract.Calendars.CALENDAR_COLOR, 0xFF2A5298.toInt())
-                    put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
-                    put(CalendarContract.Calendars.OWNER_ACCOUNT, accountName)
-                    put(CalendarContract.Calendars.VISIBLE, 1)
-                    put(CalendarContract.Calendars.SYNC_EVENTS, 1)
-                    put(CalendarContract.Calendars.CALENDAR_TIME_ZONE, TimeZone.getDefault().id)
-                }
-
-                val resultUri = contentResolver.insert(uri, values)
-                val id = resultUri?.lastPathSegment?.toLongOrNull()
-                if (id != null && id > 0L) return@withContext id
-            } catch (e: Exception) {
-                android.util.Log.w("CalendarSyncManager", "Local calendar insert attempt 1 failed", e)
-            }
-
-            // 2. Try using app package name as account
-            try {
-                val accountName = context.packageName
-                val uri = CalendarContract.Calendars.CONTENT_URI.buildUpon()
-                    .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
-                    .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, accountName)
-                    .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+                    .appendQueryParameter(
+                        CalendarContract.Calendars.ACCOUNT_TYPE,
+                        CalendarContract.ACCOUNT_TYPE_LOCAL
+                    )
                     .build()
 
                 val values = ContentValues().apply {
@@ -156,327 +133,289 @@ class CalendarSyncManager(private val context: Context) {
                     put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
                     put(CalendarContract.Calendars.NAME, displayName)
                     put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, displayName)
-                    put(CalendarContract.Calendars.CALENDAR_COLOR, 0xFF1E3C72.toInt())
-                    put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
+                    put(CalendarContract.Calendars.CALENDAR_COLOR, 0xFF1A56DB.toInt())
+                    put(
+                        CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+                        CalendarContract.Calendars.CAL_ACCESS_OWNER
+                    )
                     put(CalendarContract.Calendars.OWNER_ACCOUNT, accountName)
                     put(CalendarContract.Calendars.VISIBLE, 1)
                     put(CalendarContract.Calendars.SYNC_EVENTS, 1)
                     put(CalendarContract.Calendars.CALENDAR_TIME_ZONE, TimeZone.getDefault().id)
                 }
 
-                val resultUri = contentResolver.insert(uri, values)
-                val id = resultUri?.lastPathSegment?.toLongOrNull()
+                val id = contentResolver.insert(uri, values)?.lastPathSegment?.toLongOrNull()
                 if (id != null && id > 0L) return@withContext id
             } catch (e: Exception) {
-                android.util.Log.w("CalendarSyncManager", "Local calendar insert attempt 2 failed", e)
+                Log.w(TAG, "Local calendar insert failed for account '$accountName'", e)
             }
-
-            null
         }
+        null
+    }
 
     /**
-     * Injects calculated occurrences as All-Day events into the chosen calendar.
-     * Events are tagged using ExtendedProperties or formatted description fallback so
-     * events are reliably inserted into Google Calendar and device calendars.
-     * Returns count of successfully inserted events.
+     * Inserts each occurrence as a standalone all-day event, tagged with [syncTag] both as an
+     * ExtendedProperty and inside the description. The description copy is the fallback for
+     * providers that silently drop extended properties — without one of the two markers an event
+     * could never be deleted again without also risking the user's own data.
+     *
+     * All-day rows must be midnight **UTC** with EVENT_TIMEZONE=UTC; anything else shifts the day
+     * for users east or west of GMT.
+     *
+     * @return the number of rows actually created.
      */
     suspend fun insertEvents(
         calendarId: Long,
         eventTitle: String,
         occurrences: List<CalculatedOccurrence>,
-        customEventId: String? = null
+        syncTag: String,
+        labels: SyncLabels,
+        noteFor: (CalculatedOccurrence) -> String? = { null }
     ): Int = withContext(Dispatchers.IO) {
         if (!hasCalendarPermission() || occurrences.isEmpty()) return@withContext 0
 
-        var insertedCount = 0
-        // Process in batches of 20
-        val chunkSize = 20
-        val chunks = occurrences.chunked(chunkSize)
+        var inserted = 0
+        val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
 
-        val utcCalendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-
-        for (chunk in chunks) {
-            val operations = ArrayList<ContentProviderOperation>()
+        for (chunk in occurrences.chunked(BATCH_SIZE)) {
+            val ops = ArrayList<ContentProviderOperation>()
+            val eventOpIndices = mutableListOf<Int>()
 
             for (occ in chunk) {
-                utcCalendar.clear()
-                utcCalendar.set(occ.gregorianYear, occ.gregorianMonth - 1, occ.gregorianDay, 0, 0, 0)
-                val startMillis = utcCalendar.timeInMillis
-                val endMillis = startMillis + (24 * 60 * 60 * 1000L) // 1 full day
-
-                val desc = buildString {
-                    append("תאריך עברי: ")
-                    append(occ.hebrewDateFormatted)
-                    if (!occ.note.isNullOrBlank()) {
-                        append(" (")
-                        append(occ.note)
-                        append(")")
-                    }
-                    append("\n[$APP_TAG_NAME:$APP_TAG_VALUE]")
-                    if (!customEventId.isNullOrBlank()) {
-                        append("\n[$CUSTOM_EVENT_ID_NAME:$customEventId]")
-                    }
-                    append("\nנוצר באמצעות Hebrew Calendar Sync")
-                }
-
-                val eventBackRefIndex = operations.size
-
-                val eventOp = ContentProviderOperation.newInsert(CalendarContract.Events.CONTENT_URI)
-                    .withValue(CalendarContract.Events.CALENDAR_ID, calendarId)
-                    .withValue(CalendarContract.Events.TITLE, eventTitle)
-                    .withValue(CalendarContract.Events.DESCRIPTION, desc)
-                    .withValue(CalendarContract.Events.ALL_DAY, 1)
-                    .withValue(CalendarContract.Events.DTSTART, startMillis)
-                    .withValue(CalendarContract.Events.DTEND, endMillis)
-                    .withValue(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-                    .withValue(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
-                    .withValue(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
-                    .build()
-
-                operations.add(eventOp)
-
-                // Tag event using ExtendedProperties: name="app", value="hebrew_calendar_sync"
-                val propOp = ContentProviderOperation.newInsert(CalendarContract.ExtendedProperties.CONTENT_URI)
-                    .withValueBackReference(CalendarContract.ExtendedProperties.EVENT_ID, eventBackRefIndex)
-                    .withValue(CalendarContract.ExtendedProperties.NAME, APP_TAG_NAME)
-                    .withValue(CalendarContract.ExtendedProperties.VALUE, APP_TAG_VALUE)
-                    .build()
-
-                operations.add(propOp)
-
-                // Tag with custom event ID if available
-                if (!customEventId.isNullOrBlank()) {
-                    val idPropOp = ContentProviderOperation.newInsert(CalendarContract.ExtendedProperties.CONTENT_URI)
-                        .withValueBackReference(CalendarContract.ExtendedProperties.EVENT_ID, eventBackRefIndex)
-                        .withValue(CalendarContract.ExtendedProperties.NAME, CUSTOM_EVENT_ID_NAME)
-                        .withValue(CalendarContract.ExtendedProperties.VALUE, customEventId)
-                        .build()
-
-                    operations.add(idPropOp)
-                }
+                val index = ops.size
+                eventOpIndices.add(index)
+                ops.add(eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc).toInsertOp())
+                ops.add(extendedProp(index, APP_TAG_NAME, APP_TAG_VALUE))
+                ops.add(extendedProp(index, CUSTOM_EVENT_ID_NAME, syncTag))
             }
 
             try {
-                val results = contentResolver.applyBatch(CalendarContract.AUTHORITY, operations)
-                val count = results.count { it.uri != null }
-                android.util.Log.d("CalendarSyncManager", "Batch insert with ExtendedProperties succeeded, inserted: $count")
-                insertedCount += if (count > 0) chunk.size else 0
+                val results = contentResolver.applyBatch(CalendarContract.AUTHORITY, ops)
+                // Count only the event rows, not the two property rows that follow each one.
+                inserted += eventOpIndices.count { it < results.size && results[it].uri != null }
             } catch (e: Exception) {
-                android.util.Log.w("CalendarSyncManager", "Batch with ExtendedProperties failed, trying pure events fallback", e)
-                // Fallback 1: If ExtendedProperties is unsupported on this provider (e.g. Google Calendar), insert pure events
-                try {
-                    val pureOps = ArrayList<ContentProviderOperation>()
-                    for (occ in chunk) {
-                        utcCalendar.clear()
-                        utcCalendar.set(occ.gregorianYear, occ.gregorianMonth - 1, occ.gregorianDay, 0, 0, 0)
-                        val startMillis = utcCalendar.timeInMillis
-                        val endMillis = startMillis + (24 * 60 * 60 * 1000L)
-
-                        val desc = buildString {
-                            append("תאריך עברי: ")
-                            append(occ.hebrewDateFormatted)
-                            if (!occ.note.isNullOrBlank()) {
-                                append(" (")
-                                append(occ.note)
-                                append(")")
-                            }
-                            append("\n[$APP_TAG_NAME:$APP_TAG_VALUE]")
-                            if (!customEventId.isNullOrBlank()) {
-                                append("\n[$CUSTOM_EVENT_ID_NAME:$customEventId]")
-                            }
-                            append("\nנוצר באמצעות Hebrew Calendar Sync")
-                        }
-
-                        pureOps.add(
-                            ContentProviderOperation.newInsert(CalendarContract.Events.CONTENT_URI)
-                                .withValue(CalendarContract.Events.CALENDAR_ID, calendarId)
-                                .withValue(CalendarContract.Events.TITLE, eventTitle)
-                                .withValue(CalendarContract.Events.DESCRIPTION, desc)
-                                .withValue(CalendarContract.Events.ALL_DAY, 1)
-                                .withValue(CalendarContract.Events.DTSTART, startMillis)
-                                .withValue(CalendarContract.Events.DTEND, endMillis)
-                                .withValue(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-                                .withValue(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
-                                .withValue(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
-                                .build()
-                        )
-                    }
-                    val fallbackResults = contentResolver.applyBatch(CalendarContract.AUTHORITY, pureOps)
-                    val count = fallbackResults.count { it.uri != null }
-                    android.util.Log.d("CalendarSyncManager", "Fallback pure batch succeeded, count: $count")
-                    insertedCount += if (count > 0) count else chunk.size
-                } catch (e2: Exception) {
-                    android.util.Log.e("CalendarSyncManager", "Pure event batch insert failed, trying individual inserts", e2)
-                    // Fallback 2: Insert events individually using ContentResolver.insert
-                    for (occ in chunk) {
-                        try {
-                            utcCalendar.clear()
-                            utcCalendar.set(occ.gregorianYear, occ.gregorianMonth - 1, occ.gregorianDay, 0, 0, 0)
-                            val startMillis = utcCalendar.timeInMillis
-                            val endMillis = startMillis + (24 * 60 * 60 * 1000L)
-
-                            val values = ContentValues().apply {
-                                put(CalendarContract.Events.CALENDAR_ID, calendarId)
-                                put(CalendarContract.Events.TITLE, eventTitle)
-                                put(CalendarContract.Events.DESCRIPTION, "תאריך עברי: ${occ.hebrewDateFormatted}\n[$APP_TAG_NAME:$APP_TAG_VALUE]\nנוצר באמצעות Hebrew Calendar Sync")
-                                put(CalendarContract.Events.ALL_DAY, 1)
-                                put(CalendarContract.Events.DTSTART, startMillis)
-                                put(CalendarContract.Events.DTEND, endMillis)
-                                put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-                                put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
-                                put(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
-                            }
-                            val uri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
-                            if (uri != null) {
-                                insertedCount++
-                            }
-                        } catch (e3: Exception) {
-                            android.util.Log.e("CalendarSyncManager", "Individual event insert failed", e3)
-                        }
-                    }
-                }
+                Log.w(TAG, "Batch with extended properties failed; retrying without them", e)
+                inserted += insertWithoutExtendedProperties(calendarId, eventTitle, chunk, syncTag, labels, noteFor, utc)
             }
         }
-
-        insertedCount
+        inserted
     }
 
+    private fun insertWithoutExtendedProperties(
+        calendarId: Long,
+        eventTitle: String,
+        chunk: List<CalculatedOccurrence>,
+        syncTag: String,
+        labels: SyncLabels,
+        noteFor: (CalculatedOccurrence) -> String?,
+        utc: Calendar
+    ): Int {
+        var inserted = 0
+        for (occ in chunk) {
+            try {
+                val values = eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc).toContentValues()
+                if (contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null) {
+                    inserted++
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Individual event insert failed", e)
+            }
+        }
+        return inserted
+    }
+
+    /** One resolved calendar row: the values are identical for the batch and single-insert paths. */
+    private data class EventRow(
+        val calendarId: Long,
+        val title: String,
+        val description: String,
+        val startMillis: Long,
+        val endMillis: Long
+    )
+
+    private fun eventRow(
+        calendarId: Long,
+        title: String,
+        occ: CalculatedOccurrence,
+        syncTag: String,
+        labels: SyncLabels,
+        note: String?,
+        utc: Calendar
+    ): EventRow {
+        utc.clear()
+        utc.set(occ.gregorianYear, occ.gregorianMonth - 1, occ.gregorianDay, 0, 0, 0)
+        val start = utc.timeInMillis
+
+        val description = buildString {
+            append(labels.hebrewDateLabel).append(": ").append(occ.hebrewDateFormatted)
+            if (!note.isNullOrBlank()) append(" (").append(note).append(")")
+            append("\n[").append(APP_TAG_NAME).append(':').append(APP_TAG_VALUE).append(']')
+            append("\n[").append(CUSTOM_EVENT_ID_NAME).append(':').append(syncTag).append(']')
+            append('\n').append(labels.createdBy)
+        }
+
+        return EventRow(
+            calendarId = calendarId,
+            title = title,
+            description = description,
+            startMillis = start,
+            endMillis = start + 24L * 60 * 60 * 1000
+        )
+    }
+
+    private fun EventRow.toInsertOp(): ContentProviderOperation =
+        ContentProviderOperation.newInsert(CalendarContract.Events.CONTENT_URI)
+            .withValue(CalendarContract.Events.CALENDAR_ID, calendarId)
+            .withValue(CalendarContract.Events.TITLE, title)
+            .withValue(CalendarContract.Events.DESCRIPTION, description)
+            .withValue(CalendarContract.Events.ALL_DAY, 1)
+            .withValue(CalendarContract.Events.DTSTART, startMillis)
+            .withValue(CalendarContract.Events.DTEND, endMillis)
+            .withValue(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+            .withValue(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+            .withValue(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
+            .build()
+
+    private fun EventRow.toContentValues(): ContentValues = ContentValues().apply {
+        put(CalendarContract.Events.CALENDAR_ID, calendarId)
+        put(CalendarContract.Events.TITLE, title)
+        put(CalendarContract.Events.DESCRIPTION, description)
+        put(CalendarContract.Events.ALL_DAY, 1)
+        put(CalendarContract.Events.DTSTART, startMillis)
+        put(CalendarContract.Events.DTEND, endMillis)
+        put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+        put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+        put(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
+    }
+
+    private fun extendedProp(backRef: Int, name: String, value: String): ContentProviderOperation =
+        ContentProviderOperation.newInsert(CalendarContract.ExtendedProperties.CONTENT_URI)
+            .withValueBackReference(CalendarContract.ExtendedProperties.EVENT_ID, backRef)
+            .withValue(CalendarContract.ExtendedProperties.NAME, name)
+            .withValue(CalendarContract.ExtendedProperties.VALUE, value)
+            .build()
+
     /**
-     * Deletes events matching the specified title from user's calendar(s).
-     * Strictly targets events tagged by this app via ExtendedProperties (name="app", value="hebrew_calendar_sync"),
-     * falling back to title match only if no tagged events are found or provider lacks extended properties.
+     * Removes the calendar rows this app created for one event.
+     *
+     * Matching is deliberately narrow, in this order:
+     *   1. rows carrying our ExtendedProperty for [syncTag];
+     *   2. rows whose description contains the `[hebrew_event_id:<tag>]` marker.
+     *
+     * Legacy rows written before sync tags existed fall back to the app-wide tag scoped by title
+     * **and** calendar. There is deliberately no title-only path: an earlier version had one, and
+     * it would happily delete identically-named events the user created themselves.
+     *
+     * @return the number of rows deleted.
      */
-    suspend fun deleteEventsByTitle(title: String, calendarId: Long? = null): Int = withContext(Dispatchers.IO) {
+    suspend fun deleteSyncedEvents(
+        syncTag: String?,
+        title: String,
+        calendarId: Long?
+    ): Int = withContext(Dispatchers.IO) {
         if (!hasCalendarPermission()) return@withContext 0
 
         try {
-            // First step: query event IDs tagged with our app's extended property
-            val taggedEventIds = getAppTaggedEventIds(title = title, calendarId = calendarId)
-
-            if (taggedEventIds.isNotEmpty()) {
-                // Batch delete specifically tagged event IDs
-                var deleted = 0
-                val idChunks = taggedEventIds.chunked(40)
-                for (chunk in idChunks) {
-                    val placeholders = chunk.joinToString(",") { "?" }
-                    val selection = "${CalendarContract.Events._ID} IN ($placeholders)"
-                    val selectionArgs = chunk.map { it.toString() }.toTypedArray()
-                    deleted += contentResolver.delete(CalendarContract.Events.CONTENT_URI, selection, selectionArgs)
-                }
-                return@withContext deleted
-            }
-
-            // Fallback for legacy events: delete by title and optional calendarId
-            val selection: String
-            val selectionArgs: Array<String>
-
-            if (calendarId != null) {
-                selection = "${CalendarContract.Events.TITLE} = ? AND ${CalendarContract.Events.CALENDAR_ID} = ?"
-                selectionArgs = arrayOf(title, calendarId.toString())
+            val taggedIds = if (syncTag != null) {
+                findEventIdsByExtendedProperty(CUSTOM_EVENT_ID_NAME, syncTag, calendarId, title = null)
             } else {
-                selection = "${CalendarContract.Events.TITLE} = ?"
-                selectionArgs = arrayOf(title)
+                findEventIdsByExtendedProperty(APP_TAG_NAME, APP_TAG_VALUE, calendarId, title = title)
             }
+            if (taggedIds.isNotEmpty()) return@withContext deleteByIds(taggedIds)
 
-            contentResolver.delete(CalendarContract.Events.CONTENT_URI, selection, selectionArgs)
+            // Provider dropped our extended properties — fall back to the description marker.
+            val marker = if (syncTag != null) {
+                "[$CUSTOM_EVENT_ID_NAME:$syncTag]"
+            } else {
+                "[$APP_TAG_NAME:$APP_TAG_VALUE]"
+            }
+            deleteByDescriptionMarker(marker, title, calendarId)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to delete synced events", e)
             0
         }
     }
 
-    /**
-     * Queries ExtendedProperties to find event IDs tagged by this app and matching the title.
-     */
-    private fun getAppTaggedEventIds(title: String, calendarId: Long?): Set<Long> {
-        val eventIds = mutableSetOf<Long>()
-        var cursor: Cursor? = null
+    private fun findEventIdsByExtendedProperty(
+        name: String,
+        value: String,
+        calendarId: Long?,
+        title: String?
+    ): Set<Long> {
+        val candidateIds = mutableSetOf<Long>()
         try {
-            val projection = arrayOf(
-                CalendarContract.ExtendedProperties.EVENT_ID
-            )
-            val selection = "${CalendarContract.ExtendedProperties.NAME} = ? AND ${CalendarContract.ExtendedProperties.VALUE} = ?"
-            val selectionArgs = arrayOf(APP_TAG_NAME, APP_TAG_VALUE)
-
-            cursor = contentResolver.query(
+            contentResolver.query(
                 CalendarContract.ExtendedProperties.CONTENT_URI,
-                projection,
-                selection,
-                selectionArgs,
+                arrayOf(CalendarContract.ExtendedProperties.EVENT_ID),
+                "${CalendarContract.ExtendedProperties.NAME} = ? AND ${CalendarContract.ExtendedProperties.VALUE} = ?",
+                arrayOf(name, value),
                 null
-            )
-
-            cursor?.let {
-                val eventIdCol = it.getColumnIndexOrThrow(CalendarContract.ExtendedProperties.EVENT_ID)
-                while (it.moveToNext()) {
-                    eventIds.add(it.getLong(eventIdCol))
-                }
+            )?.use { cursor ->
+                val col = cursor.getColumnIndexOrThrow(CalendarContract.ExtendedProperties.EVENT_ID)
+                while (cursor.moveToNext()) candidateIds.add(cursor.getLong(col))
             }
         } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            cursor?.close()
+            Log.w(TAG, "Extended property lookup unavailable on this provider", e)
+            return emptySet()
         }
+        if (candidateIds.isEmpty()) return emptySet()
 
-        if (eventIds.isEmpty()) return emptySet()
-
-        // Filter event IDs to verify title and calendarId
-        val verifiedIds = mutableSetOf<Long>()
-        val chunks = eventIds.toList().chunked(40)
-        for (chunk in chunks) {
-            var eventCursor: Cursor? = null
+        // Confirm each candidate still belongs to the expected calendar (and title, for legacy rows).
+        val verified = mutableSetOf<Long>()
+        for (chunk in candidateIds.toList().chunked(ID_CHUNK)) {
+            val where = StringBuilder("${CalendarContract.Events._ID} IN (${chunk.joinToString(",") { "?" }})")
+            val args = mutableListOf<String>().apply { addAll(chunk.map { it.toString() }) }
+            if (title != null) {
+                where.append(" AND ${CalendarContract.Events.TITLE} = ?")
+                args.add(title)
+            }
+            if (calendarId != null) {
+                where.append(" AND ${CalendarContract.Events.CALENDAR_ID} = ?")
+                args.add(calendarId.toString())
+            }
             try {
-                val placeholders = chunk.joinToString(",") { "?" }
-                val where: String
-                val args: Array<String>
-
-                if (calendarId != null) {
-                    where = "${CalendarContract.Events._ID} IN ($placeholders) AND ${CalendarContract.Events.TITLE} = ? AND ${CalendarContract.Events.CALENDAR_ID} = ?"
-                    args = (chunk.map { it.toString() } + title + calendarId.toString()).toTypedArray()
-                } else {
-                    where = "${CalendarContract.Events._ID} IN ($placeholders) AND ${CalendarContract.Events.TITLE} = ?"
-                    args = (chunk.map { it.toString() } + title).toTypedArray()
-                }
-
-                eventCursor = contentResolver.query(
+                contentResolver.query(
                     CalendarContract.Events.CONTENT_URI,
                     arrayOf(CalendarContract.Events._ID),
-                    where,
-                    args,
+                    where.toString(),
+                    args.toTypedArray(),
                     null
-                )
-
-                eventCursor?.let {
-                    val idCol = it.getColumnIndexOrThrow(CalendarContract.Events._ID)
-                    while (it.moveToNext()) {
-                        verifiedIds.add(it.getLong(idCol))
-                    }
+                )?.use { cursor ->
+                    val col = cursor.getColumnIndexOrThrow(CalendarContract.Events._ID)
+                    while (cursor.moveToNext()) verified.add(cursor.getLong(col))
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                eventCursor?.close()
+                Log.w(TAG, "Event verification query failed", e)
             }
         }
-
-        return verifiedIds
+        return verified
     }
 
-    /**
-     * Deletes all events in a specific calendar.
-     */
-    suspend fun clearCalendar(calendarId: Long): Int = withContext(Dispatchers.IO) {
-        if (!hasCalendarPermission()) return@withContext 0
-
-        try {
-            contentResolver.delete(
+    private fun deleteByIds(ids: Set<Long>): Int {
+        var deleted = 0
+        for (chunk in ids.toList().chunked(ID_CHUNK)) {
+            deleted += contentResolver.delete(
                 CalendarContract.Events.CONTENT_URI,
-                "${CalendarContract.Events.CALENDAR_ID} = ?",
-                arrayOf(calendarId.toString())
+                "${CalendarContract.Events._ID} IN (${chunk.joinToString(",") { "?" }})",
+                chunk.map { it.toString() }.toTypedArray()
             )
-        } catch (e: Exception) {
-            e.printStackTrace()
-            0
         }
+        return deleted
+    }
+
+    private fun deleteByDescriptionMarker(marker: String, title: String, calendarId: Long?): Int {
+        val where = StringBuilder(
+            "${CalendarContract.Events.TITLE} = ? AND ${CalendarContract.Events.DESCRIPTION} LIKE ? ESCAPE '\\'"
+        )
+        val args = mutableListOf(title, "%${escapeLike(marker)}%")
+        if (calendarId != null) {
+            where.append(" AND ${CalendarContract.Events.CALENDAR_ID} = ?")
+            args.add(calendarId.toString())
+        }
+        return contentResolver.delete(
+            CalendarContract.Events.CONTENT_URI,
+            where.toString(),
+            args.toTypedArray()
+        )
     }
 }

@@ -2,8 +2,8 @@ package com.example
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -43,13 +42,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,7 +60,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.domain.model.HebrewDateInfo
 import com.example.ui.i18n.AppLanguage
 import com.example.ui.i18n.AppStrings
 import com.example.ui.screens.AddEditEventDialog
@@ -70,7 +68,7 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.HebrewCalendarViewModel
-import kotlinx.coroutines.launch
+import com.example.ui.viewmodel.UiEvent
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,12 +82,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private const val TAB_EVENTS = 0
+private const val TAB_CALENDAR = 1
+private const val TAB_SETTINGS = 2
+
 @Composable
 fun HebrewCalendarApp(
     viewModel: HebrewCalendarViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     val currentLanguage by viewModel.language.collectAsStateWithLifecycle()
@@ -98,43 +99,52 @@ fun HebrewCalendarApp(
     val events by viewModel.events.collectAsStateWithLifecycle()
     val calendars by viewModel.calendars.collectAsStateWithLifecycle()
     val hasCalendarPermission by viewModel.hasCalendarPermission.collectAsStateWithLifecycle()
-    val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val stagedEvents by viewModel.stagedEvents.collectAsStateWithLifecycle()
+    val prefillDate by viewModel.prefillDate.collectAsStateWithLifecycle()
 
-    // Navigation tab: 0 = Events, 1 = Calendar, 2 = Settings
-    var selectedTab by remember { mutableIntStateOf(0) }
-
-    // Dialog state
-    var showAddDialog by remember { mutableStateOf(false) }
-
-    // Calendar View states
     val calViewYear by viewModel.calViewYear.collectAsStateWithLifecycle()
     val calViewMonth by viewModel.calViewMonth.collectAsStateWithLifecycle()
     val selectedDay by viewModel.selectedDay.collectAsStateWithLifecycle()
 
-    // Permission launcher for Android Calendar
+    // rememberSaveable, so a rotation does not reset the tab or discard a half-filled dialog.
+    var selectedTab by rememberSaveable { mutableIntStateOf(TAB_EVENTS) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val readGranted = permissions[android.Manifest.permission.READ_CALENDAR] ?: false
-        val writeGranted = permissions[android.Manifest.permission.WRITE_CALENDAR] ?: false
-        if (readGranted && writeGranted) {
-            viewModel.refreshCalendarPermissions()
-            Toast.makeText(
-                context,
-                if (currentLanguage == AppLanguage.HEBREW) "הרשאות יומן ניתנו בהצלחה" else "Calendar permissions granted",
-                Toast.LENGTH_SHORT
-            ).show()
+    ) { _ ->
+        viewModel.refreshCalendarPermissions()
+    }
+
+    fun requestCalendarPermission() {
+        permissionLauncher.launch(
+            arrayOf(
+                android.Manifest.permission.READ_CALENDAR,
+                android.Manifest.permission.WRITE_CALENDAR
+            )
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.uiEvents.collect { event ->
+            when (event) {
+                is UiEvent.Message -> snackbarHostState.showSnackbar(event.text)
+                is UiEvent.Share ->
+                    context.startActivity(Intent.createChooser(event.intent, event.chooserTitle))
+                UiEvent.Saved -> showAddDialog = false
+            }
         }
     }
 
-    LaunchedEffect(statusMessage) {
-        statusMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearStatusMessage()
-        }
+    // Opening the dialog from a tapped calendar day.
+    LaunchedEffect(prefillDate) {
+        if (prefillDate != null) showAddDialog = true
     }
 
-    // Wrap whole UI in dynamic RTL / LTR based on language without app restart!
+    // The tabs are not a navigation graph, so Back has to be handled explicitly; otherwise it
+    // closed the app from any tab instead of returning to the first one.
+    BackHandler(enabled = selectedTab != TAB_EVENTS) { selectedTab = TAB_EVENTS }
+
     val layoutDirection = if (currentLanguage.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
@@ -142,10 +152,7 @@ fun HebrewCalendarApp(
             contentWindowInsets = WindowInsets.safeDrawing,
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
                     Column {
                         Row(
                             modifier = Modifier
@@ -180,40 +187,27 @@ fun HebrewCalendarApp(
                                 )
                             }
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            // The settings icon that used to sit here duplicated the bottom tab.
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.setLanguage(
+                                        if (currentLanguage == AppLanguage.HEBREW) AppLanguage.ENGLISH
+                                        else AppLanguage.HEBREW
+                                    )
+                                },
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                ),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                                modifier = Modifier.height(40.dp)
                             ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        val newLang = if (currentLanguage == AppLanguage.HEBREW) AppLanguage.ENGLISH else AppLanguage.HEBREW
-                                        viewModel.setLanguage(newLang)
-                                    },
-                                    shape = RoundedCornerShape(50),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = MaterialTheme.colorScheme.primary
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(34.dp)
-                                ) {
-                                    Text(
-                                        text = if (currentLanguage == AppLanguage.HEBREW) "EN" else "עב",
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { selectedTab = 2 },
-                                    modifier = Modifier.size(38.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Settings,
-                                        contentDescription = strings.navSettings,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                                Text(
+                                    text = if (currentLanguage == AppLanguage.HEBREW) "EN" else "עב",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -227,48 +221,33 @@ fun HebrewCalendarApp(
                         containerColor = MaterialTheme.colorScheme.surface,
                         modifier = Modifier.testTag("bottom_navigation_bar")
                     ) {
-                        NavigationBarItem(
-                            selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
-                            icon = { Icon(Icons.AutoMirrored.Filled.EventNote, contentDescription = strings.navEvents) },
-                            label = { Text(strings.navEvents, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            modifier = Modifier.testTag("nav_events")
+                        val tabs = listOf(
+                            Triple(TAB_EVENTS, Icons.AutoMirrored.Filled.EventNote, strings.navEvents),
+                            Triple(TAB_CALENDAR, Icons.Default.CalendarMonth, strings.navCalendar),
+                            Triple(TAB_SETTINGS, Icons.Default.Settings, strings.navSettings)
                         )
-                        NavigationBarItem(
-                            selected = selectedTab == 1,
-                            onClick = { selectedTab = 1 },
-                            icon = { Icon(Icons.Default.CalendarMonth, contentDescription = strings.navCalendar) },
-                            label = { Text(strings.navCalendar, fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            modifier = Modifier.testTag("nav_calendar")
-                        )
-                        NavigationBarItem(
-                            selected = selectedTab == 2,
-                            onClick = { selectedTab = 2 },
-                            icon = { Icon(Icons.Default.Settings, contentDescription = strings.navSettings) },
-                            label = { Text(strings.navSettings, fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            modifier = Modifier.testTag("nav_settings")
-                        )
+                        val tags = listOf("nav_events", "nav_calendar", "nav_settings")
+                        tabs.forEachIndexed { index, (tab, icon, label) ->
+                            NavigationBarItem(
+                                selected = selectedTab == tab,
+                                onClick = { selectedTab = tab },
+                                icon = { Icon(icon, contentDescription = null) },
+                                label = {
+                                    Text(
+                                        label,
+                                        fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.testTag(tags[index])
+                            )
+                        }
                     }
                 }
             }
@@ -280,101 +259,70 @@ fun HebrewCalendarApp(
                     .padding(innerPadding)
             ) {
                 when (selectedTab) {
-                    0 -> HomeScreen(
+                    TAB_EVENTS -> HomeScreen(
                         strings = strings,
                         events = events,
                         onAddEventClick = { showAddDialog = true },
-                        onDeleteEvent = { event -> viewModel.deleteEvent(event) },
+                        onDeleteEvent = viewModel::deleteEvent,
                         onExportIcs = { event ->
-                            val intent = viewModel.exportEventToIcs(event)
-                            context.startActivity(Intent.createChooser(intent, strings.exportIcs))
+                            viewModel.exportEventsToIcs(listOf(event), singleTitle = event.title)
                         }
                     )
 
-                    1 -> CalendarViewScreen(
+                    TAB_CALENDAR -> CalendarViewScreen(
                         strings = strings,
                         year = calViewYear,
                         month = calViewMonth,
                         selectedDay = selectedDay,
                         events = events,
-                        onPrevMonth = { viewModel.prevCalendarMonth() },
-                        onNextMonth = { viewModel.nextCalendarMonth() },
+                        onPrevMonth = viewModel::prevCalendarMonth,
+                        onNextMonth = viewModel::nextCalendarMonth,
                         onTodayClick = {
                             val now = java.util.Calendar.getInstance()
-                            viewModel.setCalendarMonth(now.get(java.util.Calendar.YEAR), now.get(java.util.Calendar.MONTH) + 1)
+                            viewModel.setCalendarMonth(
+                                now.get(java.util.Calendar.YEAR),
+                                now.get(java.util.Calendar.MONTH) + 1
+                            )
                             viewModel.setSelectedDay(now.get(java.util.Calendar.DAY_OF_MONTH))
                         },
-                        onDaySelect = { day -> viewModel.setSelectedDay(day) },
-                        onAddEventForDate = { dateInfo ->
-                            showAddDialog = true
-                        }
+                        onDaySelect = viewModel::setSelectedDay,
+                        // The tapped date is now carried into the dialog instead of being dropped.
+                        onAddEventForDate = viewModel::requestAddEventForDate
                     )
 
-                    2 -> SettingsScreen(
+                    TAB_SETTINGS -> SettingsScreen(
                         strings = strings,
                         currentLanguage = currentLanguage,
-                        onLanguageChange = { newLang -> viewModel.setLanguage(newLang) },
+                        onLanguageChange = viewModel::setLanguage,
                         events = events,
                         availableCalendars = calendars,
                         hasCalendarPermission = hasCalendarPermission,
-                        onRequestCalendarPermission = {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    android.Manifest.permission.READ_CALENDAR,
-                                    android.Manifest.permission.WRITE_CALENDAR
-                                )
-                            )
-                        },
-                        onCreateNewCalendar = { name ->
-                            viewModel.createNewHebrewCalendar(name)
-                        },
-                        onDeleteByName = { name ->
-                            viewModel.deleteEventsByName(name) { count ->
-                                Toast.makeText(
-                                    context,
-                                    "$count ${strings.eventsDeletedFromCal}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        onExportAllIcs = {
-                            val intent = viewModel.exportAllEventsToIcs(events)
-                            context.startActivity(Intent.createChooser(intent, strings.exportAllIcsTitle))
-                        }
+                        onRequestCalendarPermission = ::requestCalendarPermission,
+                        onCreateNewCalendar = viewModel::createNewHebrewCalendar,
+                        onDeleteByName = viewModel::deleteEventsByName,
+                        onExportAllIcs = { viewModel.exportEventsToIcs(events) }
                     )
                 }
 
-                // Add / Edit Event Dialog
                 if (showAddDialog) {
                     AddEditEventDialog(
                         strings = strings,
                         availableCalendars = calendars,
                         hasCalendarPermission = hasCalendarPermission,
-                        onRequestCalendarPermission = {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    android.Manifest.permission.READ_CALENDAR,
-                                    android.Manifest.permission.WRITE_CALENDAR
-                                )
-                            )
+                        isSyncing = isSyncing,
+                        stagedEvents = stagedEvents,
+                        prefillDate = prefillDate,
+                        onRequestCalendarPermission = ::requestCalendarPermission,
+                        onCreateNewCalendar = viewModel::createNewHebrewCalendar,
+                        onStageEvent = viewModel::stageEvent,
+                        onUnstageEvent = viewModel::unstageEvent,
+                        onClearStaged = viewModel::clearStagedEvents,
+                        onDismiss = {
+                            showAddDialog = false
+                            viewModel.consumePrefillDate()
                         },
-                        onCreateNewCalendar = { name ->
-                            viewModel.createNewHebrewCalendar(name)
-                        },
-                        onDismiss = { showAddDialog = false },
-                        onSaveBatch = { drafts, targetCalendarId, targetCalendarName, isIcsOnly ->
-                            viewModel.saveBatchEvents(
-                                events = drafts,
-                                targetCalendarId = targetCalendarId,
-                                targetCalendarName = targetCalendarName,
-                                isIcsOnly = isIcsOnly,
-                                onComplete = { success, shareIntent ->
-                                    showAddDialog = false
-                                    if (shareIntent != null) {
-                                        context.startActivity(Intent.createChooser(shareIntent, strings.exportIcs))
-                                    }
-                                }
-                            )
+                        onSave = { draft, calendarId, calendarName, isIcsOnly ->
+                            viewModel.saveEvents(draft, calendarId, calendarName, isIcsOnly)
                         }
                     )
                 }

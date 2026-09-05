@@ -9,15 +9,13 @@ class HebrewEventRepository(private val dao: HebrewEventDao) {
 
     suspend fun getEventById(id: Long): HebrewEventEntity? = dao.getEventById(id)
 
+    suspend fun getEventsByTitle(title: String): List<HebrewEventEntity> = dao.getEventsByTitle(title)
+
     suspend fun insertEvent(event: HebrewEventEntity): Long = dao.insertEvent(event)
 
     suspend fun updateEvent(event: HebrewEventEntity) = dao.updateEvent(event)
 
     suspend fun deleteEvent(event: HebrewEventEntity) = dao.deleteEvent(event)
 
-    suspend fun deleteEventById(id: Long) = dao.deleteEventById(id)
-
-    suspend fun deleteEventsByTitle(title: String): Int = dao.deleteEventsByTitle(title)
-
-    suspend fun deleteAllEvents() = dao.deleteAllEvents()
+    suspend fun deleteEventsByIds(ids: List<Long>): Int = dao.deleteEventsByIds(ids)
 }

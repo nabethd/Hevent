@@ -4,24 +4,51 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [HebrewEventEntity::class], version = 1, exportSchema = false)
+@Database(entities = [HebrewEventEntity::class], version = 2, exportSchema = true)
+@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun hebrewEventDao(): HebrewEventDao
 
     companion object {
+        /**
+         * v1 -> v2
+         *  - `syncTag`: per-event marker so calendar rows can be deleted precisely instead of by title.
+         *  - `occurrenceCount`: v1 stored the *occurrence* count in `yearsCount`, which meant every
+         *    re-export projected further into the future than the user asked for. Split the two and
+         *    recover `yearsCount` where the original value is derivable (monthly rows were years * 12).
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE hebrew_events ADD COLUMN syncTag TEXT")
+                db.execSQL("ALTER TABLE hebrew_events ADD COLUMN occurrenceCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE hebrew_events SET occurrenceCount = yearsCount")
+                db.execSQL(
+                    "UPDATE hebrew_events SET yearsCount = MAX(1, yearsCount / 12) " +
+                        "WHERE recurrenceType = 'MONTHLY'"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_hebrew_events_title ON hebrew_events (title)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase {
+            // Double-checked locking: the second read inside the lock is what makes this correct.
+            // Without it two threads can both build a database and the second silently wins.
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+                INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "hebrew_calendar_sync.db"
-                ).build()
-                INSTANCE = instance
-                instance
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .build()
+                    .also { INSTANCE = it }
             }
         }
     }

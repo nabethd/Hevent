@@ -108,3 +108,23 @@ val NaturalErrorContainerDark = Color(0xFF991B1B)
 val NaturalOnErrorContainerDark = Color(0xFFFEE2E2)
 
 
+
+// ------------------------------------------
+// Category accents — dark variants
+// The light containers above are pale pastels; on a dark surface they blow out and the accent
+// text on top of them fails contrast. These are the equivalents tuned for a dark background.
+// ------------------------------------------
+val BirthdayAccentDark = Color(0xFFFF8FA8)
+val BirthdayContainerDark = Color(0xFF4C1D2A)
+
+val YahrtzeitAccentDark = Color(0xFFFBBF5C)
+val YahrtzeitContainerDark = Color(0xFF463012)
+
+val AnniversaryAccentDark = Color(0xFFC4A0FF)
+val AnniversaryContainerDark = Color(0xFF35215C)
+
+val HolidayAccentDark = Color(0xFF5EE0AE)
+val HolidayContainerDark = Color(0xFF10382A)
+
+val GeneralEventAccentDark = Color(0xFF90B4FF)
+val GeneralEventContainerDark = Color(0xFF1B2C50)

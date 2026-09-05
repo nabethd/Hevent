@@ -87,7 +87,9 @@ fun SettingsScreen(
 
     var newCalendarName by remember { mutableStateOf("") }
     var isCreatingCalendar by remember { mutableStateOf(false) }
-    var calendarCreatedFeedback by remember { mutableStateOf<String?>(null) }
+    // Was a nullable String compared against a localised literal to decide its own colour, which
+    // broke the moment the language changed.
+    var calendarCreated by remember { mutableStateOf<Boolean?>(null) }
 
     LazyColumn(
         modifier = modifier
@@ -366,7 +368,7 @@ fun SettingsScreen(
                             value = newCalendarName,
                             onValueChange = {
                                 newCalendarName = it
-                                calendarCreatedFeedback = null
+                                calendarCreated = null
                             },
                             placeholder = { Text(if (strings.isHe) "אירועים עבריים" else "Hebrew Events") },
                             label = { Text(if (strings.isHe) "שם היומן החדש" else "New Calendar Name") },
@@ -388,12 +390,8 @@ fun SettingsScreen(
                                     isCreatingCalendar = true
                                     val id = onCreateNewCalendar(name)
                                     isCreatingCalendar = false
-                                    if (id != null) {
-                                        calendarCreatedFeedback = strings.calendarCreatedSuccess
-                                        newCalendarName = ""
-                                    } else {
-                                        calendarCreatedFeedback = strings.calendarCreateFailedMsg
-                                    }
+                                    calendarCreated = id != null
+                                    if (id != null) newCalendarName = ""
                                 }
                             },
                             enabled = !isCreatingCalendar,
@@ -413,15 +411,14 @@ fun SettingsScreen(
                             }
                         }
 
-                        if (calendarCreatedFeedback != null) {
+                        calendarCreated?.let { succeeded ->
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = calendarCreatedFeedback ?: "",
+                                text = if (succeeded) strings.calendarCreatedSuccess
+                                else strings.calendarCreateFailedMsg,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (calendarCreatedFeedback == strings.calendarCreatedSuccess)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.error,
+                                color = if (succeeded) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -466,9 +463,14 @@ fun SettingsScreen(
                     ) {
                         OutlinedTextField(
                             value = titleToDelete,
-                            onValueChange = { titleToDelete = it },
+                            // Read-only on purpose: this used to be free text handed straight to a
+                            // title match against the whole device calendar.
+                            onValueChange = {},
+                            readOnly = true,
                             label = { Text(strings.enterNameToDelete) },
-                            placeholder = { Text("לדוגמה: יום הולדת דרור (עברי)") },
+                            placeholder = {
+                                Text(if (strings.isHe) "בחר מהרשימה" else "Pick from your events")
+                            },
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
                             trailingIcon = {
@@ -477,7 +479,7 @@ fun SettingsScreen(
                                 }
                             },
                             modifier = Modifier
-                                .menuAnchor(MenuAnchorType.PrimaryEditable)
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth()
                                 .testTag("delete_name_input")
                         )

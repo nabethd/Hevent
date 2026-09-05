@@ -69,7 +69,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.db.HebrewEventEntity
 import com.example.domain.hebrew.HebrewCalendarEngine
-import com.example.domain.model.LeapYearRule
+import com.example.domain.model.EventType
+import com.example.domain.model.RecurrenceType
 import com.example.ui.i18n.AppStrings
 import com.example.ui.theme.AnniversaryAccent
 import com.example.ui.theme.AnniversaryContainer
@@ -82,6 +83,17 @@ import com.example.ui.theme.HolidayAccent
 import com.example.ui.theme.HolidayContainer
 import com.example.ui.theme.YahrtzeitAccent
 import com.example.ui.theme.YahrtzeitContainer
+import com.example.ui.theme.AnniversaryAccentDark
+import com.example.ui.theme.AnniversaryContainerDark
+import com.example.ui.theme.BirthdayAccentDark
+import com.example.ui.theme.BirthdayContainerDark
+import com.example.ui.theme.GeneralEventAccentDark
+import com.example.ui.theme.GeneralEventContainerDark
+import com.example.ui.theme.HolidayAccentDark
+import com.example.ui.theme.HolidayContainerDark
+import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.YahrtzeitAccentDark
+import com.example.ui.theme.YahrtzeitContainerDark
 import java.util.Calendar
 
 @Composable
@@ -188,7 +200,7 @@ fun HomeScreen(
                                     modifier = Modifier.size(15.dp)
                                 )
                                 Text(
-                                    text = todayInfo.formattedEn,
+                                    text = todayInfo.gregorianFormatted,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White.copy(alpha = 0.85f),
                                     fontWeight = FontWeight.Medium
@@ -407,7 +419,7 @@ fun HomeScreen(
                 )
             },
             text = {
-                Text("${strings.deleteEventConfirmMsg}\n\n״${event.title}״")
+                Text("${strings.deleteEventConfirmMsg(event.occurrenceCount)}\n\n״${event.title}״")
             },
             confirmButton = {
                 Button(
@@ -447,7 +459,7 @@ fun HebrewEventCard(
 ) {
     // Next occurrence calculation
     val nextOccurrences = remember(event) {
-        if (event.recurrenceType == "MONTHLY") {
+        if (event.recurrenceType == RecurrenceType.MONTHLY) {
             HebrewCalendarEngine.calculateMonthlyOccurrences(
                 originHebrewDay = event.hebrewDay,
                 monthsCount = 3
@@ -457,9 +469,8 @@ fun HebrewEventCard(
                 originHebrewYear = event.hebrewYear,
                 originHebrewMonth = event.hebrewMonth,
                 originHebrewDay = event.hebrewDay,
-                leapYearRule = LeapYearRule.valueOf(event.leapYearRule),
-                yearsCount = 3,
-                startFromCurrentYear = true
+                leapYearRule = event.leapYearRule,
+                yearsCount = 3
             )
         }
     }
@@ -481,41 +492,7 @@ fun HebrewEventCard(
         (diffMillis / (1000 * 60 * 60 * 24)).toInt()
     }
 
-    // Category styling info
-    val categoryConfig = remember(event.eventType) {
-        when (event.eventType) {
-            "BIRTHDAY" -> CategoryStyle(
-                icon = Icons.Default.Cake,
-                color = BirthdayAccent,
-                containerColor = BirthdayContainer,
-                label = strings.typeBirthday
-            )
-            "YAHRTZEIT" -> CategoryStyle(
-                icon = Icons.Default.Whatshot,
-                color = YahrtzeitAccent,
-                containerColor = YahrtzeitContainer,
-                label = strings.typeYahrzeit
-            )
-            "ANNIVERSARY" -> CategoryStyle(
-                icon = Icons.Default.Favorite,
-                color = AnniversaryAccent,
-                containerColor = AnniversaryContainer,
-                label = strings.typeAnniversary
-            )
-            "HOLIDAY" -> CategoryStyle(
-                icon = Icons.Default.AutoAwesome,
-                color = HolidayAccent,
-                containerColor = HolidayContainer,
-                label = if (strings.isHe) "חג / מועד" else "Holiday"
-            )
-            else -> CategoryStyle(
-                icon = Icons.Default.Bookmark,
-                color = GeneralEventAccent,
-                containerColor = GeneralEventContainer,
-                label = strings.typeCustom
-            )
-        }
-    }
+    val categoryConfig = categoryStyle(event.eventType, strings)
 
     ElevatedCard(
         modifier = modifier
@@ -572,8 +549,8 @@ fun HebrewEventCard(
                         val badgeText = when {
                             daysUntil <= 0 -> strings.todayBadge
                             daysUntil == 1 -> strings.tomorrowBadge
-                            daysUntil <= 30 -> "${strings.inDaysPrefix} $daysUntil ${strings.daysSuffix}"
-                            else -> "${strings.inDaysPrefix} ${daysUntil / 30} ${if (strings.isHe) "חודשים" else "months"}"
+                            daysUntil <= 30 -> strings.inDays(daysUntil)
+                            else -> strings.inMonths(daysUntil / 30)
                         }
                         val isImminent = daysUntil in 0..7
 
@@ -607,7 +584,7 @@ fun HebrewEventCard(
                     IconButton(
                         onClick = onDeleteClick,
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(48.dp)
                             .testTag("delete_event_${event.id}")
                     ) {
                         Icon(
@@ -679,7 +656,7 @@ fun HebrewEventCard(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
-                        text = if (event.recurrenceType == "MONTHLY") strings.recurMonthly else strings.recurYearly,
+                        text = if (event.recurrenceType == RecurrenceType.MONTHLY) strings.recurMonthly else strings.recurYearly,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -781,6 +758,47 @@ fun HebrewEventCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * The container colours are pale pastels that only work on a light surface, so they need a dark
+ * counterpart now that the app follows the system theme.
+ */
+@Composable
+private fun categoryStyle(type: EventType, strings: AppStrings): CategoryStyle {
+    val dark = LocalIsDarkTheme.current
+    return when (type) {
+        EventType.BIRTHDAY -> CategoryStyle(
+            Icons.Default.Cake,
+            if (dark) BirthdayAccentDark else BirthdayAccent,
+            if (dark) BirthdayContainerDark else BirthdayContainer,
+            strings.typeBirthday
+        )
+        EventType.YAHRZEIT -> CategoryStyle(
+            Icons.Default.Whatshot,
+            if (dark) YahrtzeitAccentDark else YahrtzeitAccent,
+            if (dark) YahrtzeitContainerDark else YahrtzeitContainer,
+            strings.typeYahrzeit
+        )
+        EventType.ANNIVERSARY -> CategoryStyle(
+            Icons.Default.Favorite,
+            if (dark) AnniversaryAccentDark else AnniversaryAccent,
+            if (dark) AnniversaryContainerDark else AnniversaryContainer,
+            strings.typeAnniversary
+        )
+        EventType.HOLIDAY -> CategoryStyle(
+            Icons.Default.AutoAwesome,
+            if (dark) HolidayAccentDark else HolidayAccent,
+            if (dark) HolidayContainerDark else HolidayContainer,
+            if (strings.isHe) "חג / מועד" else "Holiday"
+        )
+        EventType.CUSTOM -> CategoryStyle(
+            Icons.Default.Bookmark,
+            if (dark) GeneralEventAccentDark else GeneralEventAccent,
+            if (dark) GeneralEventContainerDark else GeneralEventContainer,
+            strings.typeCustom
+        )
     }
 }
 

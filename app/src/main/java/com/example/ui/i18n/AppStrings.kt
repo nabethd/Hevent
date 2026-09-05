@@ -1,5 +1,8 @@
 package com.example.ui.i18n
 
+import com.example.domain.model.CalculatedOccurrence
+import com.example.domain.model.OccurrenceNote
+
 class AppStrings(val lang: AppLanguage) {
     val isHe = lang == AppLanguage.HEBREW
 
@@ -12,19 +15,19 @@ class AppStrings(val lang: AppLanguage) {
     // Home / Events List
     val emptyEventsTitle: String = if (isHe) "אין עדיין אירועים עבריים" else "No Hebrew Events Yet"
     val emptyEventsSubtitle: String = if (isHe)
-        "הוסיפו ימי הולדת, אזכרות, או ימי נישואין עבריים. האפליקציה תחשב את התאריכים ל-100 השנים הבאות ותסנכרן ישירות ליומן."
+        "הוסיפו ימי הולדת, אזכרות, או ימי נישואין עבריים. האפליקציה תחשב את התאריכים הלועזיים המקבילים ותסנכרן אותם ישירות ליומן."
     else
-        "Add Hebrew birthdays, yahrzeits, or anniversaries. The app calculates corresponding Gregorian dates for 100 years and syncs directly to your calendar."
+        "Add Hebrew birthdays, yahrzeits, or anniversaries. The app calculates the matching Gregorian dates and syncs them straight to your calendar."
     val addEventFab: String = if (isHe) "הוסף אירוע חדש" else "Add New Event"
     val eventsCountLabel: String = if (isHe) "אירועים מתוזמנים" else "Scheduled Events"
     val nextUpcoming: String = if (isHe) "מועדים קרובים" else "Upcoming Occurrences"
     val syncedBadge: String = if (isHe) "מסונכרן ליומן" else "Synced to Calendar"
     val icsBadge: String = if (isHe) "קובץ ICS" else "ICS File"
     val deleteEventConfirmTitle: String = if (isHe) "מחיקת אירוע" else "Delete Event"
-    val deleteEventConfirmMsg: String = if (isHe)
-        "האם למחוק אירוע זה וכל 100 המופעים שלו מהיומן וממאגר האפליקציה?"
+    fun deleteEventConfirmMsg(occurrences: Int): String = if (isHe)
+        "האם למחוק אירוע זה ואת כל $occurrences המופעים שלו מהיומן וממאגר האפליקציה?"
     else
-        "Delete this event and all 100 occurrences from your calendar and app storage?"
+        "Delete this event and all $occurrences occurrences from your calendar and app storage?"
     val delete: String = if (isHe) "מחק" else "Delete"
     val cancel: String = if (isHe) "ביטול" else "Cancel"
     val exportIcs: String = if (isHe) "ייצא קובץ ICS" else "Export ICS"
@@ -32,7 +35,7 @@ class AppStrings(val lang: AppLanguage) {
 
     // Add Event Dialog / Form
     val addEventTitle: String = if (isHe) "הוספת אירוע עברי חוזר" else "Add Recurring Hebrew Event"
-    val eventNameLabel: String = if (isHe) "שם האירוע (לדוגמה: יום הולדת דרור עברי)" else "Event Name (e.g. Dror's Birthday - Hebrew)"
+    val eventNameLabel: String = if (isHe) "שם האירוע" else "Event Name"
     val eventNamePlaceholder: String = if (isHe) "יום הולדת / אזכרה / יום נישואין" else "Birthday / Yahrzeit / Anniversary"
     val eventTypeLabel: String = if (isHe) "סוג אירוע" else "Event Type"
     val typeBirthday: String = if (isHe) "יום הולדת" else "Birthday"
@@ -145,10 +148,10 @@ class AppStrings(val lang: AppLanguage) {
     val connectedCalendarsTitle: String = if (isHe) "יומנים זמינים במכשיר:" else "Available Device Calendars:"
     val deleteAllByNameTitle: String = if (isHe) "מחיקת אירועים לפי שם" else "Delete All Events by Name"
     val deleteAllByNameSubtitle: String = if (isHe)
-        "מחיקה בטוחה של כל מופעי האירוע מהיומן לפי שמו, תוך שמירה על אירועים אישיים אחרים"
+        "מוחק רק מופעים שאפליקציה זו יצרה. אירועים שיצרתם בעצמכם לעולם לא ייגעו."
     else
-        "Safely remove all occurrences of an event by title from the calendar"
-    val enterNameToDelete: String = if (isHe) "הזן את שם האירוע למחיקה" else "Enter exact event title to delete"
+        "Removes only occurrences this app created. Events you made yourself are never touched."
+    val enterNameToDelete: String = if (isHe) "בחר אירוע למחיקה" else "Choose an event to delete"
     val executeDeleteBtn: String = if (isHe) "מחק אירועים אלו מהיומן" else "Delete These Events from Calendar"
     val exportAllIcsTitle: String = if (isHe) "ייצוא כל האירועים לקובץ ICS" else "Export All Events to ICS"
     val exportAllIcsSubtitle: String = if (isHe) "שמירה וגיבוי של כל המועדים לקובץ שניתן לייבא לכל יומן" else "Save and backup all dates into a universal file for any calendar"
@@ -168,8 +171,74 @@ class AppStrings(val lang: AppLanguage) {
     val todayHebrewDate: String = if (isHe) "היום בלוח העברי" else "Today in Hebrew Calendar"
     val todayBadge: String = if (isHe) "היום!" else "Today!"
     val tomorrowBadge: String = if (isHe) "מחר" else "Tomorrow"
-    val inDaysPrefix: String = if (isHe) "בעוד" else "In"
-    val daysSuffix: String = if (isHe) "ימים" else "days"
+    fun inDays(days: Int): String = if (isHe) {
+        when (days) {
+            2 -> "בעוד יומיים"
+            else -> "בעוד $days ימים"
+        }
+    } else {
+        "In $days days"
+    }
+
+    fun inMonths(months: Int): String = if (isHe) {
+        when (months) {
+            2 -> "בעוד חודשיים"
+            else -> "בעוד $months חודשים"
+        }
+    } else {
+        if (months == 1) "In 1 month" else "In $months months"
+    }
     val leapYearTag: String = if (isHe) "שנה מעוברת (13 חודשים)" else "Leap Year (13 mo.)"
     val regularYearTag: String = if (isHe) "שנה פשוטה (12 חודשים)" else "Regular Year (12 mo.)"
+
+    // Labels embedded in the calendar rows / ICS files we generate. These used to be hardcoded
+    // Hebrew, so English users got Hebrew descriptions inside their own calendar.
+    val hebrewDateLabel: String = if (isHe) "תאריך עברי" else "Hebrew date"
+    val createdBy: String = if (isHe) "נוצר באמצעות Hebrew Calendar Sync" else "Created with Hebrew Calendar Sync"
+
+    val syncPartial: String = if (isHe)
+        "האירוע נשמר, אך סנכרון היומן לא הושלם"
+    else
+        "Event saved, but calendar sync did not complete"
+    val genericError: String = if (isHe)
+        "משהו השתבש. האירוע לא נשמר."
+    else
+        "Something went wrong. The event was not saved."
+    val exportFailed: String = if (isHe) "ייצוא הקובץ נכשל" else "Export failed"
+    val savingInProgress: String = if (isHe) "שומר..." else "Saving..."
+    val noEventsToDelete: String = if (isHe) "לא נמצאו אירועים בשם זה" else "No events found with that name"
+
+    /** Human text for a calculated occurrence's structured notes. */
+    fun noteText(occ: CalculatedOccurrence): String? {
+        val parts = occ.notes.map { note ->
+            when (note) {
+                OccurrenceNote.LEAP_OBSERVED_IN_ADAR_II ->
+                    if (isHe) "שנה מעוברת: נחגג באדר ב׳" else "Leap year: observed in Adar II"
+                OccurrenceNote.LEAP_OBSERVED_IN_ADAR_I ->
+                    if (isHe) "שנה מעוברת: נחגג באדר א׳" else "Leap year: observed in Adar I"
+                OccurrenceNote.LEAP_BOTH_ADAR_I ->
+                    if (isHe) "שני האדרים: אדר א׳" else "Both Adars: Adar I"
+                OccurrenceNote.LEAP_BOTH_ADAR_II ->
+                    if (isHe) "שני האדרים: אדר ב׳" else "Both Adars: Adar II"
+                OccurrenceNote.ORIGIN_ADAR_I_IN_LEAP_YEAR ->
+                    if (isHe) "שנה מעוברת: אדר א׳" else "Leap year: Adar I"
+                OccurrenceNote.ORIGIN_ADAR_II_IN_LEAP_YEAR ->
+                    if (isHe) "שנה מעוברת: אדר ב׳" else "Leap year: Adar II"
+                OccurrenceNote.COLLAPSED_TO_SINGLE_ADAR ->
+                    if (isHe) "שנה פשוטה: אדר" else "Regular year: Adar"
+                OccurrenceNote.CHESHVAN_30_MOVED_TO_KISLEV_1 ->
+                    if (isHe) "ל׳ בחשוון חסר ← א׳ בכסלו" else "30 Cheshvan absent - moved to 1 Kislev"
+                OccurrenceNote.KISLEV_30_MOVED_TO_TEVET_1 ->
+                    if (isHe) "ל׳ בכסלו חסר ← א׳ בטבת" else "30 Kislev absent - moved to 1 Tevet"
+                OccurrenceNote.ADAR_30_MOVED_TO_NISSAN_1 ->
+                    if (isHe) "ל׳ באדר חסר ← א׳ בניסן" else "30 Adar absent - moved to 1 Nissan"
+                OccurrenceNote.DAY_CLAMPED_TO_END_OF_MONTH -> {
+                    val from = occ.adjustedFromDay
+                    if (isHe) "יום $from אינו קיים ← הותאם ליום ${occ.targetHebrewDay}"
+                    else "Day $from does not exist - adjusted to day ${occ.targetHebrewDay}"
+                }
+            }
+        }
+        return parts.joinToString(" \u2022 ").ifBlank { null }
+    }
 }

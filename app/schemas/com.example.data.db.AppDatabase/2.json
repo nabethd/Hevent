@@ -1,0 +1,153 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "77971056a28085542b5eb30a2ccc59e6",
+    "entities": [
+      {
+        "tableName": "hebrew_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `eventType` TEXT NOT NULL, `recurrenceType` TEXT NOT NULL, `hebrewDay` INTEGER NOT NULL, `hebrewMonth` INTEGER NOT NULL, `hebrewYear` INTEGER NOT NULL, `hebrewDateFormatted` TEXT NOT NULL, `gregorianDay` INTEGER NOT NULL, `gregorianMonth` INTEGER NOT NULL, `gregorianYear` INTEGER NOT NULL, `leapYearRule` TEXT NOT NULL, `yearsCount` INTEGER NOT NULL, `occurrenceCount` INTEGER NOT NULL, `syncTag` TEXT, `targetCalendarId` INTEGER, `targetCalendarName` TEXT, `isSyncedToCalendar` INTEGER NOT NULL, `syncedEventsCount` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recurrenceType",
+            "columnName": "recurrenceType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hebrewDay",
+            "columnName": "hebrewDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hebrewMonth",
+            "columnName": "hebrewMonth",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hebrewYear",
+            "columnName": "hebrewYear",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hebrewDateFormatted",
+            "columnName": "hebrewDateFormatted",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gregorianDay",
+            "columnName": "gregorianDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gregorianMonth",
+            "columnName": "gregorianMonth",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gregorianYear",
+            "columnName": "gregorianYear",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leapYearRule",
+            "columnName": "leapYearRule",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "yearsCount",
+            "columnName": "yearsCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurrenceCount",
+            "columnName": "occurrenceCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncTag",
+            "columnName": "syncTag",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "targetCalendarId",
+            "columnName": "targetCalendarId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "targetCalendarName",
+            "columnName": "targetCalendarName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isSyncedToCalendar",
+            "columnName": "isSyncedToCalendar",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedEventsCount",
+            "columnName": "syncedEventsCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_hebrew_events_title",
+            "unique": false,
+            "columnNames": [
+              "title"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_hebrew_events_title` ON `${TABLE_NAME}` (`title`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '77971056a28085542b5eb30a2ccc59e6')"
+    ]
+  }
+}
