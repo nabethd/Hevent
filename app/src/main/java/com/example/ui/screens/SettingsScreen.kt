@@ -262,7 +262,7 @@ fun SettingsScreen(
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text(
-                                        text = if (strings.isHe) "לא זוהו יומנים פעילים במכשיר" else "No active calendars found on device",
+                                        text = strings.noActiveCalendars,
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -370,8 +370,8 @@ fun SettingsScreen(
                                 newCalendarName = it
                                 calendarCreated = null
                             },
-                            placeholder = { Text(if (strings.isHe) "אירועים עבריים" else "Hebrew Events") },
-                            label = { Text(if (strings.isHe) "שם היומן החדש" else "New Calendar Name") },
+                            placeholder = { Text(strings.defaultCalendarName) },
+                            label = { Text(strings.newCalendarNameLabel) },
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth().testTag("new_calendar_name_input")
@@ -382,7 +382,7 @@ fun SettingsScreen(
                         Button(
                             onClick = {
                                 val name = if (newCalendarName.isBlank()) {
-                                    if (strings.isHe) "אירועים עבריים" else "Hebrew Events"
+                                    strings.defaultCalendarName
                                 } else {
                                     newCalendarName
                                 }
@@ -469,7 +469,7 @@ fun SettingsScreen(
                             readOnly = true,
                             label = { Text(strings.enterNameToDelete) },
                             placeholder = {
-                                Text(if (strings.isHe) "בחר מהרשימה" else "Pick from your events")
+                                Text(strings.pickFromList)
                             },
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),

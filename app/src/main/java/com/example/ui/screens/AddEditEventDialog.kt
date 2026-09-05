@@ -176,7 +176,7 @@ fun AddEditEventDialog(
         mutableLongStateOf(availableCalendars.firstOrNull()?.id ?: 0L)
     }
     var newCalendarName by rememberSaveable {
-        mutableStateOf(if (strings.isHe) "אירועים עבריים" else "Hebrew Events")
+        mutableStateOf(strings.defaultCalendarName)
     }
 
     var isCreatingCal by rememberSaveable { mutableStateOf(false) }
@@ -377,13 +377,13 @@ fun AddEditEventDialog(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = if (strings.isHe) "אירועים שממתינים לסנכרון (${stagedEvents.size})" else "Events queued for sync (${stagedEvents.size})",
+                                            text = strings.queuedForSync(stagedEvents.size),
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                         TextButton(onClick = onClearStaged) {
-                                            Text(if (strings.isHe) "נקה הכל" else "Clear all", style = MaterialTheme.typography.labelMedium)
+                                            Text(strings.clearAll, style = MaterialTheme.typography.labelMedium)
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
@@ -402,7 +402,7 @@ fun AddEditEventDialog(
                                                     fontWeight = FontWeight.SemiBold
                                                 )
                                                 Text(
-                                                    text = "${draft.hebrewDateInfo.formattedHe} • ${draft.yearsCount} ${if (strings.isHe) "שנים" else "years"}",
+                                                    text = "${draft.hebrewDateInfo.formattedHe} • ${draft.yearsCount} ${strings.yearsUnit}",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -685,7 +685,7 @@ fun AddEditEventDialog(
                                         )
                                         if (currentHebrewDateInfo.isLeapYear) {
                                             Text(
-                                                text = if (strings.isHe) "שנת מעוברת (13 חודשים)" else "Leap Year (13 months)",
+                                                text = strings.leapYear13Months,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
@@ -864,13 +864,13 @@ fun AddEditEventDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = if (strings.isHe) "משך חזרתיות (שנים)" else "Duration (Years)",
+                                        text = strings.durationYears,
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
-                                        text = "$yearsDuration ${if (strings.isHe) "שנים קדימה" else "years ahead"}",
+                                        text = "$yearsDuration ${strings.yearsAhead}",
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
@@ -887,7 +887,7 @@ fun AddEditEventDialog(
                                             onClick = { yearsDuration = yrs },
                                             label = {
                                                 Text(
-                                                    text = "$yrs ${if (strings.isHe) "שנים" else "yrs"}",
+                                                    text = "$yrs ${strings.yearsAbbrev}",
                                                     fontWeight = if (yearsDuration == yrs) FontWeight.Bold else FontWeight.Normal
                                                 )
                                             },
@@ -985,7 +985,7 @@ fun AddEditEventDialog(
                                 Column {
                                     Text(strings.destDeviceCalendar, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                     Text(
-                                        text = if (strings.isHe) "מומלץ עבור סנכרון ל-Google Calendar" else "Recommended for Google Calendar sync",
+                                        text = strings.recommendedForGoogle,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -1032,7 +1032,7 @@ fun AddEditEventDialog(
                                         modifier = Modifier.padding(start = 32.dp, top = 4.dp, end = 8.dp)
                                     ) {
                                         Text(
-                                            text = if (strings.isHe) "טוען יומנים זמינים..." else "Loading available calendars...",
+                                            text = strings.loadingCalendars,
                                             style = MaterialTheme.typography.bodySmall,
                                             modifier = Modifier.padding(8.dp)
                                         )
@@ -1055,7 +1055,7 @@ fun AddEditEventDialog(
                                 Column {
                                     Text(strings.destNewCalendar, style = MaterialTheme.typography.bodyMedium)
                                     Text(
-                                        text = if (strings.isHe) "יומן מקומי נפרד במכשיר (לא יומן ענן של גוגל)" else "Local device calendar (separate from Google cloud)",
+                                        text = strings.localCalendarHint,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1100,7 +1100,7 @@ fun AddEditEventDialog(
                                         .padding(start = 32.dp, top = 4.dp)
                                 )
                                 Text(
-                                    text = if (strings.isHe) "שימו לב: יצירת יומן חדש יוצרת יומן במכשיר. לסנכרון שמופיע בכל המכשירים בחשבון גוגל שלכם, בחרו באפשרות הראשונה (סנכרון ישיר ליומן Google)." else "Note: creating a new calendar creates a local calendar on this device. To sync with your Google account across devices, choose the first option above.",
+                                    text = strings.newCalendarNote,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(start = 32.dp, top = 4.dp, end = 8.dp)
@@ -1214,7 +1214,7 @@ fun AddEditEventDialog(
                         Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (strings.isHe) "הוסף עוד אירוע לסנכרון יחד" else "Add another event to sync together",
+                            text = strings.addAnotherToBatch,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -1284,11 +1284,9 @@ fun AddEditEventDialog(
                                 val count = stagedEvents.size + (if (eventTitle.isNotBlank()) 1 else 0)
                                 val syncText = when {
                                     count > 1 && syncDestination == "ICS_ONLY" ->
-                                        if (strings.isHe) "ייצא $count אירועים (ICS)"
-                                        else "Export $count Events (ICS)"
+                                        strings.exportEventsCount(count)
                                     count > 1 ->
-                                        if (strings.isHe) "סנכרן $count אירועים ליומן"
-                                        else "Sync $count Events to Calendar"
+                                        strings.syncEventsCount(count)
                                     isEditing -> strings.saveChanges
                                     syncDestination == "ICS_ONLY" -> strings.saveAndExportIcsBtn
                                     else -> strings.saveAndSyncBtn

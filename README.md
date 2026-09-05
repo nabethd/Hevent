@@ -72,7 +72,8 @@ base64 -i debug.keystore | pbcopy   # paste into Settings > Secrets > Actions
 ## How it works
 
 ```
-ui/            Compose screens, the AppStrings bilingual table, theme
+ui/            Compose screens, theme, the AppStrings resource facade
+res/values/    English strings; Hebrew in res/values-iw/ (note: 'iw', not 'he')
 ui/viewmodel/  HebrewCalendarViewModel — the single source of UI state
 domain/        HebrewCalendarEngine (dates), CalendarSyncManager (provider), IcsExporter
 data/          Room database, entity, DAO, repository
@@ -92,6 +93,10 @@ identically-named events the user had created themselves.
 **All-day events are stored at midnight UTC** with `EVENT_TIMEZONE = "UTC"`. Anything else shifts
 the day for users away from GMT.
 
+**Hebrew resources live in `res/values-iw/`, not `values-he/`.** `iw` is the legacy ISO code, and
+it is the qualifier Android's resource system expects. Getting it wrong fails silently — the app
+just falls back to English — so `AppStringsTest` asserts that Hebrew actually resolves.
+
 ## Known gaps
 
 - **Sunset is a manual toggle, not a computed time.** Checking "after sunset" moves the Hebrew date
@@ -100,7 +105,9 @@ the day for users away from GMT.
 - **Reminders are limited to the day or week before, at 09:00.** An all-day event starts at
   midnight and the calendar provider counts reminders backwards from the start, so "09:00 on the day
   itself" cannot be expressed.
-- **UI strings live in Kotlin**, in `AppStrings`, rather than `res/values/`. This works but gives up
-  per-device locale, plurals and the standard translation tooling. Migrating is mechanical but
-  touches every screen, so it belongs in its own change.
+- **The in-app language switch is not the system per-app language.** It builds a configuration
+  context by hand so the toggle can apply without a restart. Android 13's per-app language setting
+  would be more idiomatic but needs `appcompat` for anything below API 33.
+- **Gregorian month names are still a hardcoded pair of arrays** in the calendar screen, rather than
+  coming from `DateFormatSymbols` for the active locale.
 - **No instrumented tests.** Unit and Robolectric coverage only.

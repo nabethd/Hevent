@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.test.core.app.ApplicationProvider
 import com.example.data.db.HebrewEventEntity
 import com.example.domain.calendar.DeviceCalendarInfo
 import com.example.domain.hebrew.HebrewCalendarEngine
@@ -42,8 +43,9 @@ class ScreenshotTest {
 
     @get:Rule val rule = createComposeRule()
 
-    private val he = AppStrings(AppLanguage.HEBREW)
-    private val en = AppStrings(AppLanguage.ENGLISH)
+    private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    private val he = AppStrings(context, AppLanguage.HEBREW)
+    private val en = AppStrings(context, AppLanguage.ENGLISH)
 
     private val today = HebrewCalendarEngine.getToday()
 

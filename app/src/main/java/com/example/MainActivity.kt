@@ -95,7 +95,7 @@ fun HebrewCalendarApp(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val currentLanguage by viewModel.language.collectAsStateWithLifecycle()
-    val strings = remember(currentLanguage) { AppStrings(currentLanguage) }
+    val strings = remember(currentLanguage, context) { AppStrings(context, currentLanguage) }
 
     val events by viewModel.events.collectAsStateWithLifecycle()
     val calendars by viewModel.calendars.collectAsStateWithLifecycle()

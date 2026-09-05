@@ -243,7 +243,7 @@ fun CalendarViewScreen(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = if (strings.isHe) "החודש הקודם" else "Previous month"
+                        contentDescription = strings.prevMonth
                     )
                 }
 
@@ -281,7 +281,7 @@ fun CalendarViewScreen(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = if (strings.isHe) "החודש הבא" else "Next month"
+                        contentDescription = strings.nextMonth
                     )
                 }
 
@@ -456,7 +456,7 @@ fun CalendarViewScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (strings.isHe) "אירוע ליום זה" else "Add Event", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text(strings.addEventForDay, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

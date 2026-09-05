@@ -59,13 +59,19 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
     val uiEvents = _events.receiveAsFlow()
 
     // Language — persisted, so the choice survives a restart.
+    // Hebrew remains the default when nothing is stored, as the app was designed Hebrew-first.
+    // To follow the device instead, swap the fallback for AppLanguage.fromDeviceLocale().
     private val _language = MutableStateFlow(
         AppLanguage.entries.firstOrNull { it.code == prefs.getString(KEY_LANGUAGE, null) }
             ?: AppLanguage.HEBREW
     )
     val language: StateFlow<AppLanguage> = _language.asStateFlow()
 
-    private val strings: AppStrings get() = AppStrings(_language.value)
+    // Rebuilt only when the language actually changes; each instance reads ~150 resources.
+    private var cachedStrings: AppStrings? = null
+    private val strings: AppStrings
+        get() = cachedStrings?.takeIf { it.lang == _language.value }
+            ?: AppStrings(getApplication(), _language.value).also { cachedStrings = it }
 
     fun setLanguage(newLanguage: AppLanguage) {
         _language.value = newLanguage
@@ -306,7 +312,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                     _events.send(
                         UiEvent.Message(
                             when {
-                                totalSynced > 0 -> "${localStrings.syncSuccess} ($totalSynced)"
+                                totalSynced > 0 -> localStrings.syncSuccessCount(totalSynced)
                                 targetCalendarId != null -> localStrings.syncPartial
                                 else -> localStrings.eventSaved
                             }
@@ -447,7 +453,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
             }
             repository.deleteEventsByIds(matches.map { it.id })
             _events.send(
-                UiEvent.Message("$deletedFromCalendar ${localStrings.eventsDeletedFromCal}")
+                UiEvent.Message(localStrings.eventsDeletedFromCalendar(deletedFromCalendar))
             )
         }
     }

@@ -263,7 +263,7 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = if (strings.isHe) "אירוע חדש" else "New Event",
+                                        text = strings.newEventShort,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.labelMedium
                                     )
@@ -359,7 +359,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (strings.isHe) "אירועים במעקב" else "Tracked Events",
+                            text = strings.trackedEvents,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -810,7 +810,7 @@ private fun categoryStyle(type: EventType, strings: AppStrings): CategoryStyle {
             Icons.Default.AutoAwesome,
             if (dark) HolidayAccentDark else HolidayAccent,
             if (dark) HolidayContainerDark else HolidayContainer,
-            if (strings.isHe) "חג / מועד" else "Holiday"
+            strings.typeHoliday
         )
         EventType.CUSTOM -> CategoryStyle(
             Icons.Default.Bookmark,
