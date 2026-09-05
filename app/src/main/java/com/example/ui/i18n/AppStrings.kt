@@ -66,6 +66,7 @@ class AppStrings(val lang: AppLanguage, private val res: Resources) {
     val createdBy: String = res.getString(R.string.created_by)
     val dateInputMode: String = res.getString(R.string.date_input_mode)
     val dayLabel: String = res.getString(R.string.day_label)
+    val dayHasEvents: String = res.getString(R.string.day_has_events)
     val defaultCalendarName: String = res.getString(R.string.default_calendar_name)
     val delete: String = res.getString(R.string.delete)
     val deleteAllByNameSubtitle: String = res.getString(R.string.delete_all_by_name_subtitle)

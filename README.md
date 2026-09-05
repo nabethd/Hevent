@@ -108,6 +108,4 @@ just falls back to English — so `AppStringsTest` asserts that Hebrew actually 
 - **The in-app language switch is not the system per-app language.** It builds a configuration
   context by hand so the toggle can apply without a restart. Android 13's per-app language setting
   would be more idiomatic but needs `appcompat` for anything below API 33.
-- **Gregorian month names are still a hardcoded pair of arrays** in the calendar screen, rather than
-  coming from `DateFormatSymbols` for the active locale.
 - **No instrumented tests.** Unit and Robolectric coverage only.

@@ -158,6 +158,7 @@
     <string name="years_unit">years</string>
     <string name="export_events_count">Export %1$d Events (ICS)</string>
     <string name="sync_events_count">Sync %1$d Events to Calendar</string>
+    <string name="day_has_events">has events</string>
     <plurals name="in_days">
         <item quantity="one">In %d day</item>
         <item quantity="other">In %d days</item>
