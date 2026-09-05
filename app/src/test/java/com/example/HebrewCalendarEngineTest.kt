@@ -1,0 +1,259 @@
+package com.example
+
+import com.example.domain.hebrew.HebrewCalendarEngine
+import com.example.domain.model.LeapYearRule
+import com.example.domain.model.OccurrenceNote
+import com.kosherjava.zmanim.hebrewcalendar.JewishDate
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Covers the rules that make this app non-trivial: Adar I vs Adar II, defective Cheshvan and
+ * Kislev, and 30 Adar in a regular year.
+ *
+ * Years are discovered at runtime rather than hardcoded, so the suite keeps testing the real rule
+ * as the calendar moves rather than a snapshot of it. Projection goes through
+ * `occurrencesInHebrewYears`, which takes an explicit span and is therefore deterministic — unlike
+ * `calculateYearlyOccurrences`, which is anchored to today by design.
+ */
+class HebrewCalendarEngineTest {
+
+    private val searchRange = 5780..5850
+
+    private fun firstYearWhere(predicate: (Int) -> Boolean): Int =
+        searchRange.firstOrNull(predicate) ?: error("no qualifying Hebrew year in $searchRange")
+
+    private fun project(
+        originYear: Int,
+        originMonth: Int,
+        originDay: Int,
+        targetYear: Int,
+        rule: LeapYearRule = LeapYearRule.STANDARD_ADAR_II
+    ) = HebrewCalendarEngine.occurrencesInHebrewYears(
+        originHebrewYear = originYear,
+        originHebrewMonth = originMonth,
+        originHebrewDay = originDay,
+        leapYearRule = rule,
+        years = targetYear..targetYear
+    )
+
+    // ---------- leap year handling ----------
+
+    @Test
+    fun `regular-year Adar defaults to Adar II in a leap year`() {
+        val regularOrigin = firstYearWhere { !HebrewCalendarEngine.isLeapYear(it) }
+        val leapTarget = firstYearWhere { HebrewCalendarEngine.isLeapYear(it) }
+
+        val occ = project(regularOrigin, JewishDate.ADAR, 10, leapTarget).single()
+
+        assertEquals(JewishDate.ADAR_II, occ.targetHebrewMonth)
+        assertEquals(10, occ.targetHebrewDay)
+        assertTrue(occ.notes.contains(OccurrenceNote.LEAP_OBSERVED_IN_ADAR_II))
+    }
+
+    @Test
+    fun `Adar I rule places the occurrence in Adar I`() {
+        val regularOrigin = firstYearWhere { !HebrewCalendarEngine.isLeapYear(it) }
+        val leapTarget = firstYearWhere { HebrewCalendarEngine.isLeapYear(it) }
+
+        val occ = project(regularOrigin, JewishDate.ADAR, 10, leapTarget, LeapYearRule.ADAR_I).single()
+
+        assertEquals(JewishDate.ADAR, occ.targetHebrewMonth)
+        assertTrue(occ.notes.contains(OccurrenceNote.LEAP_OBSERVED_IN_ADAR_I))
+    }
+
+    @Test
+    fun `BOTH rule yields two occurrences in a leap year and one otherwise`() {
+        val regularOrigin = firstYearWhere { !HebrewCalendarEngine.isLeapYear(it) }
+        val leapTarget = firstYearWhere { HebrewCalendarEngine.isLeapYear(it) }
+        val regularTarget = firstYearWhere { it > leapTarget && !HebrewCalendarEngine.isLeapYear(it) }
+
+        val inLeap = project(regularOrigin, JewishDate.ADAR, 10, leapTarget, LeapYearRule.BOTH)
+        assertEquals(2, inLeap.size)
+        assertEquals(listOf(JewishDate.ADAR, JewishDate.ADAR_II), inLeap.map { it.targetHebrewMonth })
+
+        val inRegular = project(regularOrigin, JewishDate.ADAR, 10, regularTarget, LeapYearRule.BOTH)
+        assertEquals(1, inRegular.size)
+    }
+
+    @Test
+    fun `an Adar II origin collapses to Adar in a regular year`() {
+        val leapOrigin = firstYearWhere { HebrewCalendarEngine.isLeapYear(it) }
+        val regularTarget = firstYearWhere { it > leapOrigin && !HebrewCalendarEngine.isLeapYear(it) }
+
+        val occ = project(leapOrigin, JewishDate.ADAR_II, 10, regularTarget).single()
+
+        assertEquals(JewishDate.ADAR, occ.targetHebrewMonth)
+        assertTrue(occ.notes.contains(OccurrenceNote.COLLAPSED_TO_SINGLE_ADAR))
+    }
+
+    @Test
+    fun `an Adar I origin stays in Adar I in another leap year`() {
+        val leapOrigin = firstYearWhere { HebrewCalendarEngine.isLeapYear(it) }
+        val leapTarget = firstYearWhere { it > leapOrigin && HebrewCalendarEngine.isLeapYear(it) }
+
+        val occ = project(leapOrigin, JewishDate.ADAR, 10, leapTarget).single()
+
+        assertEquals(JewishDate.ADAR, occ.targetHebrewMonth)
+        assertTrue(occ.notes.contains(OccurrenceNote.ORIGIN_ADAR_I_IN_LEAP_YEAR))
+    }
+
+    // ---------- short months ----------
+
+    @Test
+    fun `30 Cheshvan moves to 1 Kislev when Cheshvan is short`() {
+        val shortCheshvan = firstYearWhere {
+            HebrewCalendarEngine.getDaysInMonth(it, JewishDate.CHESHVAN) == 29
+        }
+        val longCheshvan = firstYearWhere {
+            HebrewCalendarEngine.getDaysInMonth(it, JewishDate.CHESHVAN) == 30
+        }
+
+        val moved = project(longCheshvan, JewishDate.CHESHVAN, 30, shortCheshvan).single()
+        assertEquals(JewishDate.KISLEV, moved.targetHebrewMonth)
+        assertEquals(1, moved.targetHebrewDay)
+        assertEquals(30, moved.adjustedFromDay)
+        assertTrue(moved.notes.contains(OccurrenceNote.CHESHVAN_30_MOVED_TO_KISLEV_1))
+
+        val unchanged = project(longCheshvan, JewishDate.CHESHVAN, 30, longCheshvan).single()
+        assertEquals(JewishDate.CHESHVAN, unchanged.targetHebrewMonth)
+        assertEquals(30, unchanged.targetHebrewDay)
+    }
+
+    @Test
+    fun `30 Kislev moves to 1 Tevet when Kislev is short`() {
+        val shortKislev = firstYearWhere {
+            HebrewCalendarEngine.getDaysInMonth(it, JewishDate.KISLEV) == 29
+        }
+        val longKislev = firstYearWhere {
+            HebrewCalendarEngine.getDaysInMonth(it, JewishDate.KISLEV) == 30
+        }
+
+        val moved = project(longKislev, JewishDate.KISLEV, 30, shortKislev).single()
+        assertEquals(JewishDate.TEVES, moved.targetHebrewMonth)
+        assertEquals(1, moved.targetHebrewDay)
+        assertTrue(moved.notes.contains(OccurrenceNote.KISLEV_30_MOVED_TO_TEVET_1))
+    }
+
+    @Test
+    fun `30 Adar I moves to 1 Nissan in a regular year`() {
+        val leapOrigin = firstYearWhere { HebrewCalendarEngine.isLeapYear(it) }
+        val regularTarget = firstYearWhere { it > leapOrigin && !HebrewCalendarEngine.isLeapYear(it) }
+
+        // Adar I always has 30 days; Adar in a regular year has 29.
+        assertEquals(30, HebrewCalendarEngine.getDaysInMonth(leapOrigin, JewishDate.ADAR))
+        assertEquals(29, HebrewCalendarEngine.getDaysInMonth(regularTarget, JewishDate.ADAR))
+
+        val occ = project(leapOrigin, JewishDate.ADAR, 30, regularTarget).single()
+        assertEquals(JewishDate.NISSAN, occ.targetHebrewMonth)
+        assertEquals(1, occ.targetHebrewDay)
+        assertTrue(occ.notes.contains(OccurrenceNote.ADAR_30_MOVED_TO_NISSAN_1))
+    }
+
+    // ---------- invalid input is normalised, not thrown ----------
+
+    @Test
+    fun `Adar II normalises to Adar in a regular year`() {
+        val regular = firstYearWhere { !HebrewCalendarEngine.isLeapYear(it) }
+        val leap = firstYearWhere { HebrewCalendarEngine.isLeapYear(it) }
+
+        assertEquals(JewishDate.ADAR, HebrewCalendarEngine.normalizeMonth(regular, JewishDate.ADAR_II))
+        assertEquals(JewishDate.ADAR_II, HebrewCalendarEngine.normalizeMonth(leap, JewishDate.ADAR_II))
+    }
+
+    @Test
+    fun `fromHebrew tolerates an out-of-range day and an impossible month`() {
+        val regular = firstYearWhere { !HebrewCalendarEngine.isLeapYear(it) }
+
+        // Would throw inside KosherJava if passed through unchecked.
+        val info = HebrewCalendarEngine.fromHebrew(regular, JewishDate.ADAR_II, 45)
+
+        assertEquals(JewishDate.ADAR, info.hebrewMonth)
+        assertTrue(info.hebrewDay in 1..30)
+    }
+
+    // ---------- past occurrences ----------
+
+    @Test
+    fun `projection never starts in the past`() {
+        val today = HebrewCalendarEngine.getToday()
+
+        // An anniversary of today's Hebrew date: last year's is behind us, so the first result
+        // must be today or later. This is what used to render as "Today!" all year round.
+        val occurrences = HebrewCalendarEngine.calculateYearlyOccurrences(
+            originHebrewYear = today.hebrewYear - 5,
+            originHebrewMonth = today.hebrewMonth,
+            originHebrewDay = today.hebrewDay,
+            yearsCount = 3
+        )
+
+        assertFalse(occurrences.isEmpty())
+        val todayKey = today.gregorianYear * 10_000 + today.gregorianMonth * 100 + today.gregorianDay
+        val firstKey = occurrences.first().let {
+            it.gregorianYear * 10_000 + it.gregorianMonth * 100 + it.gregorianDay
+        }
+        assertTrue("first occurrence $firstKey is before today $todayKey", firstKey >= todayKey)
+    }
+
+    @Test
+    fun `yearly projection spans the requested number of Hebrew years`() {
+        val today = HebrewCalendarEngine.getToday()
+        val occurrences = HebrewCalendarEngine.calculateYearlyOccurrences(
+            originHebrewYear = today.hebrewYear - 10,
+            originHebrewMonth = JewishDate.TISHREI,
+            originHebrewDay = 1,
+            yearsCount = 7
+        )
+        assertEquals(7, occurrences.map { it.targetHebrewYear }.distinct().size)
+    }
+
+    // ---------- monthly recurrence ----------
+
+    @Test
+    fun `monthly recurrence advances through Adar II and into the next year`() {
+        val occurrences = HebrewCalendarEngine.calculateMonthlyOccurrences(
+            originHebrewDay = 15,
+            monthsCount = 30
+        )
+        assertEquals(30, occurrences.size)
+
+        // Strictly increasing, so the Adar II -> Nissan and Elul -> Tishrei transitions are sane.
+        val keys = occurrences.map {
+            it.gregorianYear * 10_000 + it.gregorianMonth * 100 + it.gregorianDay
+        }
+        assertEquals(keys.sorted(), keys)
+        assertEquals(keys.distinct().size, keys.size)
+    }
+
+    @Test
+    fun `monthly day is clamped in a short month`() {
+        val shortCheshvan = firstYearWhere {
+            HebrewCalendarEngine.getDaysInMonth(it, JewishDate.CHESHVAN) == 29
+        }
+        assertEquals(29, HebrewCalendarEngine.monthlyDayIn(shortCheshvan, JewishDate.CHESHVAN, 30))
+        assertEquals(12, HebrewCalendarEngine.monthlyDayIn(shortCheshvan, JewishDate.CHESHVAN, 12))
+    }
+
+    // ---------- conversion ----------
+
+    @Test
+    fun `Gregorian to Hebrew conversion round-trips`() {
+        val info = HebrewCalendarEngine.fromGregorian(1993, 10, 13)
+        assertEquals(JewishDate.TISHREI, info.hebrewMonth)
+        assertEquals(28, info.hebrewDay)
+        assertEquals(5754, info.hebrewYear)
+
+        val back = HebrewCalendarEngine.fromHebrew(info.hebrewYear, info.hebrewMonth, info.hebrewDay)
+        assertEquals(1993, back.gregorianYear)
+        assertEquals(10, back.gregorianMonth)
+        assertEquals(13, back.gregorianDay)
+    }
+
+    @Test
+    fun `gregorianFormatted renders the civil date, not the Hebrew one`() {
+        val info = HebrewCalendarEngine.fromGregorian(1993, 10, 13)
+        assertEquals("13/10/1993", info.gregorianFormatted)
+    }
+}

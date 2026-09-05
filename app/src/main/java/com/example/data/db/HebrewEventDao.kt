@@ -28,12 +28,6 @@ interface HebrewEventDao {
     @Delete
     suspend fun deleteEvent(event: HebrewEventEntity)
 
-    @Query("DELETE FROM hebrew_events WHERE id = :id")
-    suspend fun deleteEventById(id: Long)
-
-    @Query("DELETE FROM hebrew_events WHERE title = :title")
-    suspend fun deleteEventsByTitle(title: String): Int
-
-    @Query("DELETE FROM hebrew_events")
-    suspend fun deleteAllEvents()
+    @Query("DELETE FROM hebrew_events WHERE id IN (:ids)")
+    suspend fun deleteEventsByIds(ids: List<Long>): Int
 }

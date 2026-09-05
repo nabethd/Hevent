@@ -59,8 +59,8 @@ import androidx.compose.ui.unit.sp
 import com.example.data.db.HebrewEventEntity
 import com.example.domain.hebrew.HebrewCalendarEngine
 import com.example.domain.model.HebrewDateInfo
+import com.example.domain.model.RecurrenceType
 import com.example.ui.i18n.AppStrings
-import com.kosherjava.zmanim.hebrewcalendar.JewishDate
 import java.util.Calendar
 
 data class CalendarDayItem(
@@ -168,19 +168,53 @@ fun CalendarViewScreen(
         HebrewCalendarEngine.fromGregorian(year, month, selectedDay)
     }
 
-    // Filter events matching selected Hebrew date
-    val matchingEvents = remember(events, selectedDayInfo) {
-        events.filter { ev ->
-            if (ev.recurrenceType == "MONTHLY") {
-                ev.hebrewDay == selectedDayInfo.hebrewDay
+    /**
+     * Which events fall on each visible day, keyed by Gregorian date.
+     *
+     * This is built from [HebrewCalendarEngine] rather than by comparing Hebrew day/month numbers.
+     * The previous version compared them by hand in two separate places, and both copies ignored
+     * the event's chosen Adar rule and the 30-Cheshvan / 30-Kislev shifts — so the grid marked days
+     * that were never synced and missed days that were.
+     */
+    val eventsByDate: Map<Int, List<HebrewEventEntity>> = remember(events, daysInGrid) {
+        if (daysInGrid.isEmpty()) return@remember emptyMap()
+
+        val index = mutableMapOf<Int, MutableList<HebrewEventEntity>>()
+        val hebrewYears = daysInGrid.map { it.hebrewDateInfo.hebrewYear }
+        val yearSpan = (hebrewYears.min())..(hebrewYears.max())
+
+        for (event in events) {
+            if (event.recurrenceType == RecurrenceType.MONTHLY) {
+                for (day in daysInGrid) {
+                    val info = day.hebrewDateInfo
+                    val landsOn = HebrewCalendarEngine.monthlyDayIn(
+                        info.hebrewYear,
+                        info.hebrewMonth,
+                        event.hebrewDay
+                    )
+                    if (info.hebrewDay == landsOn) {
+                        index.getOrPut(gregorianKey(day.year, day.month, day.dayOfMonth)) { mutableListOf() }
+                            .add(event)
+                    }
+                }
             } else {
-                // Check if this occurrence matches
-                ev.hebrewDay == selectedDayInfo.hebrewDay &&
-                    (ev.hebrewMonth == selectedDayInfo.hebrewMonth ||
-                        (selectedDayInfo.isLeapYear && ev.hebrewMonth == JewishDate.ADAR && selectedDayInfo.hebrewMonth == JewishDate.ADAR_II))
+                HebrewCalendarEngine.occurrencesInHebrewYears(
+                    originHebrewYear = event.hebrewYear,
+                    originHebrewMonth = event.hebrewMonth,
+                    originHebrewDay = event.hebrewDay,
+                    leapYearRule = event.leapYearRule,
+                    years = yearSpan
+                ).forEach { occ ->
+                    index.getOrPut(gregorianKey(occ.gregorianYear, occ.gregorianMonth, occ.gregorianDay)) {
+                        mutableListOf()
+                    }.add(event)
+                }
             }
         }
+        index
     }
+
+    val matchingEvents = eventsByDate[gregorianKey(year, month, selectedDay)].orEmpty()
 
     Column(
         modifier = modifier
@@ -203,20 +237,14 @@ fun CalendarViewScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = onPrevMonth,
-                        modifier = Modifier.testTag("cal_prev_month")
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous Month")
-                    }
-
-                    IconButton(
-                        onClick = onNextMonth,
-                        modifier = Modifier.testTag("cal_next_month")
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
-                    }
+                IconButton(
+                    onClick = onPrevMonth,
+                    modifier = Modifier.testTag("cal_prev_month")
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = if (strings.isHe) "החודש הקודם" else "Previous month"
+                    )
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -244,6 +272,16 @@ fun CalendarViewScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                IconButton(
+                    onClick = onNextMonth,
+                    modifier = Modifier.testTag("cal_next_month")
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = if (strings.isHe) "החודש הבא" else "Next month"
                     )
                 }
 
@@ -297,16 +335,8 @@ fun CalendarViewScreen(
             items(daysInGrid) { item ->
                 val isSelected = item.isCurrentMonth && item.dayOfMonth == selectedDay
 
-                // Check if this day has any matching recurring events
-                val hasEventOnDay = events.any { ev ->
-                    if (ev.recurrenceType == "MONTHLY") {
-                        ev.hebrewDay == item.hebrewDateInfo.hebrewDay
-                    } else {
-                        ev.hebrewDay == item.hebrewDateInfo.hebrewDay &&
-                            (ev.hebrewMonth == item.hebrewDateInfo.hebrewMonth ||
-                                (item.hebrewDateInfo.isLeapYear && ev.hebrewMonth == JewishDate.ADAR && item.hebrewDateInfo.hebrewMonth == JewishDate.ADAR_II))
-                    }
-                }
+                val hasEventOnDay =
+                    eventsByDate.containsKey(gregorianKey(item.year, item.month, item.dayOfMonth))
 
                 val backgroundColor = when {
                     isSelected -> MaterialTheme.colorScheme.primary
@@ -341,7 +371,7 @@ fun CalendarViewScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = if (isSelected || item.isToday) FontWeight.ExtraBold else FontWeight.Medium,
                             color = when {
-                                isSelected -> Color.White
+                                isSelected -> MaterialTheme.colorScheme.onPrimary
                                 item.isToday -> MaterialTheme.colorScheme.primary
                                 item.isCurrentMonth -> MaterialTheme.colorScheme.onSurface
                                 else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
@@ -354,7 +384,7 @@ fun CalendarViewScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
                             color = when {
-                                isSelected -> Color.White.copy(alpha = 0.9f)
+                                isSelected -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
                                 item.isToday -> MaterialTheme.colorScheme.primary
                                 item.isCurrentMonth -> MaterialTheme.colorScheme.secondary
                                 else -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
@@ -368,7 +398,7 @@ fun CalendarViewScreen(
                                     .padding(top = 2.dp)
                                     .size(5.dp)
                                     .clip(CircleShape)
-                                    .background(if (isSelected) Color.White else MaterialTheme.colorScheme.primary)
+                                    .background(if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
                             )
                         }
                     }
@@ -479,7 +509,7 @@ fun CalendarViewScreen(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = if (ev.recurrenceType == "MONTHLY") strings.recurMonthly else strings.recurYearly,
+                                        text = if (ev.recurrenceType == RecurrenceType.MONTHLY) strings.recurMonthly else strings.recurYearly,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -507,3 +537,6 @@ fun CalendarViewScreen(
         }
     }
 }
+
+/** Packs a Gregorian date into a single comparable key. */
+private fun gregorianKey(year: Int, month: Int, day: Int): Int = year * 10_000 + month * 100 + day

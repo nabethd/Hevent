@@ -89,6 +89,10 @@ import com.example.domain.calendar.DeviceCalendarInfo
 import com.example.domain.hebrew.HebrewCalendarEngine
 import com.example.domain.model.CalculatedOccurrence
 import com.example.domain.model.HebrewDateInfo
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.domain.model.EventType
+import com.example.domain.model.RecurrenceType
 import com.example.domain.model.LeapYearRule
 import com.example.ui.i18n.AppStrings
 import com.example.ui.viewmodel.HebrewCalendarViewModel
@@ -102,11 +106,17 @@ fun AddEditEventDialog(
     strings: AppStrings,
     availableCalendars: List<DeviceCalendarInfo>,
     hasCalendarPermission: Boolean,
+    isSyncing: Boolean,
+    stagedEvents: List<HebrewCalendarViewModel.EventDraft>,
+    prefillDate: HebrewDateInfo?,
     onRequestCalendarPermission: () -> Unit,
     onCreateNewCalendar: suspend (String) -> Long?,
+    onStageEvent: (HebrewCalendarViewModel.EventDraft) -> Unit,
+    onUnstageEvent: (Int) -> Unit,
+    onClearStaged: () -> Unit,
     onDismiss: () -> Unit,
-    onSaveBatch: (
-        events: List<HebrewCalendarViewModel.EventDraft>,
+    onSave: (
+        draft: HebrewCalendarViewModel.EventDraft?,
         targetCalendarId: Long?,
         targetCalendarName: String?,
         isIcsOnly: Boolean
@@ -114,63 +124,84 @@ fun AddEditEventDialog(
 ) {
     val coroutineScope = rememberCoroutineScope()
 
-    var eventTitle by remember { mutableStateOf("") }
-    var eventType by remember { mutableStateOf("BIRTHDAY") }
-    var isHebrewInputMode by remember { mutableStateOf(false) } // False = Gregorian, True = Hebrew
+    // Defaults are today (or the day tapped in the calendar). They used to be hardcoded to
+    // 13/10/1993 — the author's own birthday, shipped as every user's starting date.
+    val todayInfo = remember { HebrewCalendarEngine.getToday() }
+    val seed = prefillDate ?: todayInfo
 
-    // Gregorian initial values (e.g. 13 Oct 1993 from user's example)
-    val today = remember { Calendar.getInstance() }
-    var gDay by remember { mutableIntStateOf(13) }
-    var gMonth by remember { mutableIntStateOf(10) }
-    var gYear by remember { mutableIntStateOf(1993) }
+    // rememberSaveable throughout: a rotation used to discard the entire form.
+    var eventTitle by rememberSaveable { mutableStateOf("") }
+    var eventType by rememberSaveable { mutableStateOf(EventType.BIRTHDAY) }
+    var isHebrewInputMode by rememberSaveable { mutableStateOf(false) }
 
-    // Hebrew initial values
-    var hDay by remember { mutableIntStateOf(28) }
-    var hMonth by remember { mutableIntStateOf(JewishDate.TISHREI) }
-    var hYear by remember { mutableIntStateOf(5754) }
+    var gDay by rememberSaveable { mutableIntStateOf(seed.gregorianDay) }
+    var gMonth by rememberSaveable { mutableIntStateOf(seed.gregorianMonth) }
+    var gYear by rememberSaveable { mutableIntStateOf(seed.gregorianYear) }
 
-    // Recurrence
-    var recurrenceType by remember { mutableStateOf("YEARLY") } // YEARLY or MONTHLY
+    var hDay by rememberSaveable { mutableIntStateOf(seed.hebrewDay) }
+    var hMonth by rememberSaveable { mutableIntStateOf(seed.hebrewMonth) }
+    var hYear by rememberSaveable { mutableIntStateOf(seed.hebrewYear) }
 
-    // Duration (in years) chosen by user: defaults to 20
-    var yearsDuration by remember { mutableIntStateOf(20) }
+    var recurrenceType by rememberSaveable { mutableStateOf(RecurrenceType.YEARLY) }
+    var yearsDuration by rememberSaveable { mutableIntStateOf(20) }
+    var leapYearRule by rememberSaveable { mutableStateOf(LeapYearRule.STANDARD_ADAR_II) }
+    var showHalachicInfo by rememberSaveable { mutableStateOf(false) }
 
-    // Multi-event queue / batch list
-    val stagedEvents = remember { mutableStateListOf<HebrewCalendarViewModel.EventDraft>() }
-
-    // Halachic Leap Year rule
-    var leapYearRule by remember { mutableStateOf(LeapYearRule.STANDARD_ADAR_II) }
-    var showHalachicInfo by remember { mutableStateOf(false) }
-
-    // Sync destination: "EXISTING_CAL", "NEW_CAL", "ICS_ONLY"
-    var syncDestination by remember {
-        mutableStateOf(if (hasCalendarPermission && availableCalendars.isNotEmpty()) "EXISTING_CAL" else if (hasCalendarPermission) "NEW_CAL" else "ICS_ONLY")
+    var syncDestination by rememberSaveable {
+        mutableStateOf(
+            when {
+                hasCalendarPermission && availableCalendars.isNotEmpty() -> "EXISTING_CAL"
+                hasCalendarPermission -> "NEW_CAL"
+                else -> "ICS_ONLY"
+            }
+        )
     }
-    var selectedCalendarId by remember {
+    var selectedCalendarId by rememberSaveable {
         mutableLongStateOf(availableCalendars.firstOrNull()?.id ?: 0L)
     }
-    var newCalendarName by remember { mutableStateOf(if (strings.isHe) "אירועים עבריים" else "Hebrew Events") }
+    var newCalendarName by rememberSaveable {
+        mutableStateOf(if (strings.isHe) "אירועים עבריים" else "Hebrew Events")
+    }
 
-    var isCreatingCal by remember { mutableStateOf(false) }
-    var titleError by remember { mutableStateOf<String?>(null) }
-    var creationErrorFeedback by remember { mutableStateOf<String?>(null) }
+    var isCreatingCal by rememberSaveable { mutableStateOf(false) }
+    var titleError by rememberSaveable { mutableStateOf<String?>(null) }
+    var creationErrorFeedback by rememberSaveable { mutableStateOf<String?>(null) }
+    // Tapping save without calendar permission used to request it and silently drop the save.
+    var awaitingPermission by rememberSaveable { mutableStateOf(false) }
 
-    // Automatically select the best calendar (Google Calendar or primary) when calendars become available
+    val daysInGregorianMonth = remember(gYear, gMonth) {
+        Calendar.getInstance().apply {
+            clear()
+            set(gYear, gMonth - 1, 1)
+        }.getActualMaximum(Calendar.DAY_OF_MONTH)
+    }
+
+    // Keep the Gregorian day inside the selected month: the picker offered 1..31 unconditionally,
+    // so "31 February" silently rolled forward into March.
+    LaunchedEffect(daysInGregorianMonth) {
+        if (gDay > daysInGregorianMonth) gDay = daysInGregorianMonth
+    }
+
+    // Adar II exists only in a leap year. Moving the year from leap to regular left the month on
+    // Adar II, which is not a date KosherJava will accept.
+    LaunchedEffect(hYear) {
+        val normalized = HebrewCalendarEngine.normalizeMonth(hYear, hMonth)
+        if (normalized != hMonth) hMonth = normalized
+    }
+
     LaunchedEffect(availableCalendars, hasCalendarPermission) {
         if (availableCalendars.isNotEmpty()) {
             if (selectedCalendarId == 0L || availableCalendars.none { it.id == selectedCalendarId }) {
-                val best = availableCalendars.find { it.accountType.contains("google", ignoreCase = true) }
-                    ?: availableCalendars.find { it.isPrimary }
-                    ?: availableCalendars.first()
-                selectedCalendarId = best.id
+                selectedCalendarId = (
+                    availableCalendars.find { it.accountType.contains("google", ignoreCase = true) }
+                        ?: availableCalendars.find { it.isPrimary }
+                        ?: availableCalendars.first()
+                    ).id
             }
-            if (syncDestination == "ICS_ONLY" && hasCalendarPermission) {
-                syncDestination = "EXISTING_CAL"
-            }
+            if (syncDestination == "ICS_ONLY" && hasCalendarPermission) syncDestination = "EXISTING_CAL"
         }
     }
 
-    // Synchronize conversions
     val currentHebrewDateInfo by remember {
         derivedStateOf {
             if (!isHebrewInputMode) {
@@ -181,10 +212,9 @@ fun AddEditEventDialog(
         }
     }
 
-    // Calculated preview occurrences (first 5 of 100)
     val previewOccurrences by remember {
         derivedStateOf {
-            if (recurrenceType == "MONTHLY") {
+            if (recurrenceType == RecurrenceType.MONTHLY) {
                 HebrewCalendarEngine.calculateMonthlyOccurrences(
                     originHebrewDay = currentHebrewDateInfo.hebrewDay,
                     monthsCount = 5
@@ -195,10 +225,76 @@ fun AddEditEventDialog(
                     originHebrewMonth = currentHebrewDateInfo.hebrewMonth,
                     originHebrewDay = currentHebrewDateInfo.hebrewDay,
                     leapYearRule = leapYearRule,
-                    yearsCount = 5,
-                    startFromCurrentYear = true
+                    yearsCount = 5
                 )
             }
+        }
+    }
+
+    fun currentDraft(): HebrewCalendarViewModel.EventDraft? =
+        if (eventTitle.isBlank()) null
+        else HebrewCalendarViewModel.EventDraft(
+            title = eventTitle.trim(),
+            eventType = eventType,
+            recurrenceType = recurrenceType,
+            hebrewDateInfo = currentHebrewDateInfo,
+            leapYearRule = leapYearRule,
+            yearsCount = yearsDuration
+        )
+
+    fun performSave() {
+        creationErrorFeedback = null
+        val draft = currentDraft()
+        if (draft == null && stagedEvents.isEmpty()) {
+            titleError = strings.fillTitleError
+            return
+        }
+
+        if (syncDestination != "ICS_ONLY" && !hasCalendarPermission) {
+            awaitingPermission = true
+            onRequestCalendarPermission()
+            return
+        }
+
+        when (syncDestination) {
+            "NEW_CAL" -> coroutineScope.launch {
+                isCreatingCal = true
+                val newId = try {
+                    onCreateNewCalendar(newCalendarName)
+                } finally {
+                    isCreatingCal = false
+                }
+                if (newId != null) {
+                    onSave(draft, newId, newCalendarName, false)
+                } else {
+                    // Some devices refuse local calendar creation; fall back rather than fail.
+                    val fallback = availableCalendars.find {
+                        it.accountType.contains("google", ignoreCase = true)
+                    } ?: availableCalendars.find { it.isPrimary } ?: availableCalendars.firstOrNull()
+
+                    if (fallback != null) {
+                        creationErrorFeedback = strings.calendarCreateErrorFallback
+                        selectedCalendarId = fallback.id
+                        onSave(draft, fallback.id, fallback.displayName, false)
+                    } else {
+                        creationErrorFeedback = strings.calendarCreateFailedMsg
+                        onSave(draft, null, null, true)
+                    }
+                }
+            }
+            "ICS_ONLY" -> onSave(draft, null, null, true)
+            else -> {
+                val calendar = availableCalendars.find { it.id == selectedCalendarId }
+                onSave(draft, selectedCalendarId, calendar?.displayName, false)
+            }
+        }
+    }
+
+    // Resume the save the permission prompt interrupted.
+    LaunchedEffect(hasCalendarPermission) {
+        if (hasCalendarPermission && awaitingPermission) {
+            awaitingPermission = false
+            performSave()
         }
     }
 
@@ -268,7 +364,7 @@ fun AddEditEventDialog(
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        TextButton(onClick = { stagedEvents.clear() }) {
+                                        TextButton(onClick = onClearStaged) {
                                             Text(if (strings.isHe) "נקה הכל" else "Clear all", style = MaterialTheme.typography.labelMedium)
                                         }
                                     }
@@ -294,8 +390,8 @@ fun AddEditEventDialog(
                                                 )
                                             }
                                             IconButton(
-                                                onClick = { stagedEvents.removeAt(idx) },
-                                                modifier = Modifier.size(32.dp)
+                                                onClick = { onUnstageEvent(idx) },
+                                                modifier = Modifier.size(48.dp)
                                             ) {
                                                 Icon(
                                                     Icons.Default.DeleteOutline,
@@ -341,9 +437,9 @@ fun AddEditEventDialog(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 val suggestions = if (strings.isHe) {
-                                    listOf("יום הולדת (עברי)", "יום הולדת דרור (עברי)", "אזכרה (יארצייט)", "יום נישואין עברי")
+                                    listOf("יום הולדת", "אזכרה (יארצייט)", "יום נישואין", "יום הולדת של אמא")
                                 } else {
-                                    listOf("Hebrew Birthday", "Dror's Birthday (Hebrew)", "Yahrzeit", "Hebrew Anniversary")
+                                    listOf("Hebrew Birthday", "Yahrzeit", "Hebrew Anniversary", "Mum's Birthday")
                                 }
                                 suggestions.forEach { s ->
                                     Surface(
@@ -380,13 +476,13 @@ fun AddEditEventDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             FilterChip(
-                                selected = eventType == "BIRTHDAY",
-                                onClick = { eventType = "BIRTHDAY" },
+                                selected = eventType == EventType.BIRTHDAY,
+                                onClick = { eventType = EventType.BIRTHDAY },
                                 shape = RoundedCornerShape(50),
                                 label = { Text(strings.typeBirthday, maxLines = 1) },
                                 leadingIcon = {
                                     Icon(
-                                        if (eventType == "BIRTHDAY") Icons.Default.Check else Icons.Default.Cake,
+                                        if (eventType == EventType.BIRTHDAY) Icons.Default.Check else Icons.Default.Cake,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -394,13 +490,13 @@ fun AddEditEventDialog(
                                 modifier = Modifier.weight(1f)
                             )
                             FilterChip(
-                                selected = eventType == "YAHRZEIT",
-                                onClick = { eventType = "YAHRZEIT" },
+                                selected = eventType == EventType.YAHRZEIT,
+                                onClick = { eventType = EventType.YAHRZEIT },
                                 shape = RoundedCornerShape(50),
                                 label = { Text(strings.typeYahrzeit, maxLines = 1) },
                                 leadingIcon = {
                                     Icon(
-                                        if (eventType == "YAHRZEIT") Icons.Default.Check else Icons.Default.Whatshot,
+                                        if (eventType == EventType.YAHRZEIT) Icons.Default.Check else Icons.Default.Whatshot,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -408,13 +504,13 @@ fun AddEditEventDialog(
                                 modifier = Modifier.weight(1f)
                             )
                             FilterChip(
-                                selected = eventType == "ANNIVERSARY",
-                                onClick = { eventType = "ANNIVERSARY" },
+                                selected = eventType == EventType.ANNIVERSARY,
+                                onClick = { eventType = EventType.ANNIVERSARY },
                                 shape = RoundedCornerShape(50),
                                 label = { Text(strings.typeAnniversary, maxLines = 1) },
                                 leadingIcon = {
                                     Icon(
-                                        if (eventType == "ANNIVERSARY") Icons.Default.Check else Icons.Default.Favorite,
+                                        if (eventType == EventType.ANNIVERSARY) Icons.Default.Check else Icons.Default.Favorite,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -482,7 +578,7 @@ fun AddEditEventDialog(
                                         NumberWheelPicker(
                                             label = strings.dayLabel,
                                             value = gDay,
-                                            range = 1..31,
+                                            range = 1..daysInGregorianMonth,
                                             onValueChange = { gDay = it },
                                             modifier = Modifier.weight(1f)
                                         )
@@ -584,42 +680,42 @@ fun AddEditEventDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { recurrenceType = "YEARLY" },
+                                    .clickable { recurrenceType = RecurrenceType.YEARLY },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
-                                    selected = recurrenceType == "YEARLY",
-                                    onClick = { recurrenceType = "YEARLY" }
+                                    selected = recurrenceType == RecurrenceType.YEARLY,
+                                    onClick = { recurrenceType = RecurrenceType.YEARLY }
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = strings.recurYearly,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (recurrenceType == "YEARLY") FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (recurrenceType == RecurrenceType.YEARLY) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { recurrenceType = "MONTHLY" },
+                                    .clickable { recurrenceType = RecurrenceType.MONTHLY },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
-                                    selected = recurrenceType == "MONTHLY",
-                                    onClick = { recurrenceType = "MONTHLY" }
+                                    selected = recurrenceType == RecurrenceType.MONTHLY,
+                                    onClick = { recurrenceType = RecurrenceType.MONTHLY }
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = strings.recurMonthly,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (recurrenceType == "MONTHLY") FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (recurrenceType == RecurrenceType.MONTHLY) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
                         }
                     }
 
                     // Halachic Leap Year Rules (for Yearly recurrence)
-                    if (recurrenceType == "YEARLY") {
+                    if (recurrenceType == RecurrenceType.YEARLY) {
                         item {
                             Card(
                                 colors = CardDefaults.cardColors(
@@ -991,9 +1087,9 @@ fun AddEditEventDialog(
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.secondary
                                             )
-                                            if (occ.note != null) {
+                                            strings.noteText(occ)?.let { note ->
                                                 Text(
-                                                    text = occ.note,
+                                                    text = note,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.error
                                                 )
@@ -1021,16 +1117,7 @@ fun AddEditEventDialog(
                                 titleError = strings.fillTitleError
                                 return@OutlinedButton
                             }
-                            stagedEvents.add(
-                                HebrewCalendarViewModel.EventDraft(
-                                    title = eventTitle.trim(),
-                                    eventType = eventType,
-                                    recurrenceType = recurrenceType,
-                                    hebrewDateInfo = currentHebrewDateInfo,
-                                    leapYearRule = leapYearRule,
-                                    yearsCount = yearsDuration
-                                )
-                            )
+                            currentDraft()?.let(onStageEvent)
                             // Reset title and error for the next event
                             eventTitle = ""
                             titleError = null
@@ -1083,88 +1170,12 @@ fun AddEditEventDialog(
                             Text(strings.cancel)
                         }
 
+                        val busy = isSyncing || isCreatingCal
                         Button(
-                            onClick = {
-                                // Clear previous feedback
-                                creationErrorFeedback = null
-
-                                // Gather all events: queued items plus current form if title is filled
-                                val allEventsToSave = stagedEvents.toMutableList()
-                                if (eventTitle.isNotBlank()) {
-                                    allEventsToSave.add(
-                                        HebrewCalendarViewModel.EventDraft(
-                                            title = eventTitle.trim(),
-                                            eventType = eventType,
-                                            recurrenceType = recurrenceType,
-                                            hebrewDateInfo = currentHebrewDateInfo,
-                                            leapYearRule = leapYearRule,
-                                            yearsCount = yearsDuration
-                                        )
-                                    )
-                                }
-
-                                if (allEventsToSave.isEmpty()) {
-                                    titleError = strings.fillTitleError
-                                    return@Button
-                                }
-
-                                // Check permission if syncing to a calendar
-                                if (syncDestination != "ICS_ONLY" && !hasCalendarPermission) {
-                                    onRequestCalendarPermission()
-                                    return@Button
-                                }
-
-                                if (syncDestination == "NEW_CAL") {
-                                    coroutineScope.launch {
-                                        isCreatingCal = true
-                                        val newId = onCreateNewCalendar(newCalendarName)
-                                        isCreatingCal = false
-                                        if (newId != null) {
-                                            onSaveBatch(
-                                                allEventsToSave,
-                                                newId,
-                                                newCalendarName,
-                                                false
-                                            )
-                                        } else {
-                                            // Fallback: If device policy restricts creating a local calendar,
-                                            // automatically sync to existing Google/Device calendar or export ICS!
-                                            val fallbackCal = availableCalendars.find { it.accountType.contains("google", ignoreCase = true) }
-                                                ?: availableCalendars.find { it.isPrimary }
-                                                ?: availableCalendars.firstOrNull()
-
-                                            if (fallbackCal != null) {
-                                                creationErrorFeedback = strings.calendarCreateErrorFallback
-                                                selectedCalendarId = fallbackCal.id
-                                                onSaveBatch(
-                                                    allEventsToSave,
-                                                    fallbackCal.id,
-                                                    fallbackCal.displayName,
-                                                    false
-                                                )
-                                            } else {
-                                                creationErrorFeedback = strings.calendarCreateFailedMsg
-                                                onSaveBatch(
-                                                    allEventsToSave,
-                                                    null,
-                                                    null,
-                                                    true
-                                                )
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    val isIcs = syncDestination == "ICS_ONLY"
-                                    val calId = if (!isIcs) selectedCalendarId else null
-                                    val calName = availableCalendars.find { it.id == calId }?.displayName
-                                    onSaveBatch(
-                                        allEventsToSave,
-                                        calId,
-                                        calName,
-                                        isIcs
-                                    )
-                                }
-                            },
+                            onClick = ::performSave,
+                            // Saving is asynchronous and the dialog stays up until it finishes, so
+                            // without this a second tap wrote a duplicate set of calendar rows.
+                            enabled = !busy,
                             modifier = Modifier
                                 .weight(1.8f)
                                 .testTag("save_sync_button"),
@@ -1174,29 +1185,29 @@ fun AddEditEventDialog(
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
-                            if (isCreatingCal) {
+                            if (busy) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     color = MaterialTheme.colorScheme.onPrimary,
                                     strokeWidth = 2.dp
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(strings.savingInProgress, fontWeight = FontWeight.Bold)
                             } else {
                                 Icon(Icons.Default.Sync, contentDescription = null)
                                 Spacer(modifier = Modifier.width(6.dp))
                                 val count = stagedEvents.size + (if (eventTitle.isNotBlank()) 1 else 0)
-                                val syncText = if (count > 1) {
-                                    if (syncDestination == "ICS_ONLY") {
-                                        if (strings.isHe) "ייצא $count אירועים (ICS)" else "Export $count Events (ICS)"
-                                    } else {
-                                        if (strings.isHe) "סנכרן $count אירועים ליומן" else "Sync $count Events to Calendar"
-                                    }
-                                } else {
-                                    if (syncDestination == "ICS_ONLY") strings.saveAndExportIcsBtn else strings.saveAndSyncBtn
+                                val syncText = when {
+                                    count > 1 && syncDestination == "ICS_ONLY" ->
+                                        if (strings.isHe) "ייצא $count אירועים (ICS)"
+                                        else "Export $count Events (ICS)"
+                                    count > 1 ->
+                                        if (strings.isHe) "סנכרן $count אירועים ליומן"
+                                        else "Sync $count Events to Calendar"
+                                    syncDestination == "ICS_ONLY" -> strings.saveAndExportIcsBtn
+                                    else -> strings.saveAndSyncBtn
                                 }
-                                Text(
-                                    text = syncText,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text(text = syncText, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -1247,8 +1258,13 @@ fun NumberWheelPicker(
                 containerColor = MaterialTheme.colorScheme.surface,
                 title = { Text(label) },
                 text = {
-                    LazyColumn(modifier = Modifier.height(240.dp)) {
-                        items(range.toList()) { num ->
+                    val values = remember(range) { range.toList() }
+                    // Open on the current value instead of at the top of the list.
+                    val listState = rememberLazyListState(
+                        initialFirstVisibleItemIndex = values.indexOf(value).coerceAtLeast(0)
+                    )
+                    LazyColumn(state = listState, modifier = Modifier.height(240.dp)) {
+                        items(values) { num ->
                             Text(
                                 text = num.toString(),
                                 style = MaterialTheme.typography.bodyLarge,
@@ -1313,7 +1329,10 @@ fun HebrewDayPicker(
                 containerColor = MaterialTheme.colorScheme.surface,
                 title = { Text(label) },
                 text = {
-                    LazyColumn(modifier = Modifier.height(240.dp)) {
+                    val listState = rememberLazyListState(
+                        initialFirstVisibleItemIndex = (selectedDay - 1).coerceAtLeast(0)
+                    )
+                    LazyColumn(state = listState, modifier = Modifier.height(240.dp)) {
                         items((1..30).toList()) { d ->
                             val hebrewStr = HebrewCalendarEngine.formatHebrewNumber(d)
                             Text(
@@ -1398,7 +1417,10 @@ fun HebrewMonthPicker(
                 containerColor = MaterialTheme.colorScheme.surface,
                 title = { Text(label) },
                 text = {
-                    LazyColumn(modifier = Modifier.height(260.dp)) {
+                    val listState = rememberLazyListState(
+                        initialFirstVisibleItemIndex = months.indexOf(selectedMonth).coerceAtLeast(0)
+                    )
+                    LazyColumn(state = listState, modifier = Modifier.height(260.dp)) {
                         items(months) { m ->
                             val mName = HebrewCalendarEngine.getHebrewMonthName(m, isLeap, isHe)
                             Text(
@@ -1433,7 +1455,7 @@ fun HebrewYearPicker(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val years = remember { (5700..5850).toList() }
+    val years = remember { (5600..5850).toList() }
 
     Column(modifier = modifier) {
         Text(
@@ -1466,7 +1488,10 @@ fun HebrewYearPicker(
                 containerColor = MaterialTheme.colorScheme.surface,
                 title = { Text(label) },
                 text = {
-                    LazyColumn(modifier = Modifier.height(260.dp)) {
+                    val listState = rememberLazyListState(
+                        initialFirstVisibleItemIndex = years.indexOf(selectedYear).coerceAtLeast(0)
+                    )
+                    LazyColumn(state = listState, modifier = Modifier.height(260.dp)) {
                         items(years) { y ->
                             val yName = HebrewCalendarEngine.formatHebrewNumber(y)
                             Text(

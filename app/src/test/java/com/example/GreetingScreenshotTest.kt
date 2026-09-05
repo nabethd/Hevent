@@ -3,6 +3,9 @@ package com.example
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.example.data.db.HebrewEventEntity
+import com.example.domain.model.EventType
+import com.example.domain.model.LeapYearRule
+import com.example.domain.model.RecurrenceType
 import com.example.ui.i18n.AppLanguage
 import com.example.ui.i18n.AppStrings
 import com.example.ui.screens.HomeScreen
@@ -29,9 +32,9 @@ class GreetingScreenshotTest {
         val mockEvents = listOf(
             HebrewEventEntity(
                 id = 1,
-                title = "יום הולדת דרור (עברי)",
-                eventType = "BIRTHDAY",
-                recurrenceType = "YEARLY",
+                title = "יום הולדת (עברי)",
+                eventType = EventType.BIRTHDAY,
+                recurrenceType = RecurrenceType.YEARLY,
                 hebrewDay = 28,
                 hebrewMonth = 7, // Tishrei
                 hebrewYear = 5754,
@@ -39,12 +42,14 @@ class GreetingScreenshotTest {
                 gregorianDay = 13,
                 gregorianMonth = 10,
                 gregorianYear = 1993,
-                leapYearRule = "STANDARD_ADAR_II",
-                yearsCount = 100,
+                leapYearRule = LeapYearRule.STANDARD_ADAR_II,
+                yearsCount = 20,
+                occurrenceCount = 20,
+                syncTag = "hcs-test",
                 targetCalendarId = 1L,
                 targetCalendarName = "Google Calendar",
                 isSyncedToCalendar = true,
-                syncedEventsCount = 100
+                syncedEventsCount = 20
             )
         )
 

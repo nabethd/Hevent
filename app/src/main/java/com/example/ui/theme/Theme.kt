@@ -8,6 +8,8 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
@@ -64,10 +66,18 @@ private val LightColorScheme = lightColorScheme(
     onErrorContainer = NaturalOnErrorContainerLight
 )
 
+/**
+ * Whether the active scheme is the dark one. The category accent colours live outside the
+ * Material scheme, so they need this to pick their variant.
+ */
+val LocalIsDarkTheme = staticCompositionLocalOf { false }
+
 @Composable
 fun MyApplicationTheme(
-    darkTheme: Boolean = false, // Default to light mode for crisp, clean presentation
-    dynamicColor: Boolean = false, // Use our handcrafted palette for distinct Hebrew branding
+    // Follows the system setting. It used to be pinned to `false`, which left the whole dark
+    // palette below unreachable and rendered a white app under a dark-mode status bar.
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = false, // handcrafted palette, not the wallpaper's
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {
@@ -79,9 +89,11 @@ fun MyApplicationTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalIsDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

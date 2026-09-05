@@ -1,7 +1,9 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.AppDatabase
@@ -9,51 +11,70 @@ import com.example.data.db.HebrewEventEntity
 import com.example.data.repository.HebrewEventRepository
 import com.example.domain.calendar.CalendarSyncManager
 import com.example.domain.calendar.DeviceCalendarInfo
+import com.example.domain.calendar.SyncLabels
 import com.example.domain.hebrew.HebrewCalendarEngine
+import com.example.domain.ics.IcsEvent
 import com.example.domain.ics.IcsExporter
 import com.example.domain.model.CalculatedOccurrence
+import com.example.domain.model.EventType
 import com.example.domain.model.HebrewDateInfo
 import com.example.domain.model.LeapYearRule
+import com.example.domain.model.RecurrenceType
 import com.example.ui.i18n.AppLanguage
 import com.example.ui.i18n.AppStrings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Calendar
+
+/** One-shot effects. A StateFlow would swallow two identical messages in a row. */
+sealed interface UiEvent {
+    data class Message(val text: String) : UiEvent
+    data class Share(val intent: Intent, val chooserTitle: String) : UiEvent
+    data object Saved : UiEvent
+}
 
 class HebrewCalendarViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository: HebrewEventRepository
-    val calendarSyncManager: CalendarSyncManager = CalendarSyncManager(application)
-
-    init {
-        val db = AppDatabase.getInstance(application)
-        repository = HebrewEventRepository(db.hebrewEventDao())
+    private companion object {
+        const val TAG = "HebrewCalendarVM"
+        const val PREFS = "hebrew_calendar_prefs"
+        const val KEY_LANGUAGE = "language"
     }
 
-    // Language state - Hebrew by default per user request
-    private val _language = MutableStateFlow(AppLanguage.HEBREW)
+    private val prefs = application.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val repository: HebrewEventRepository =
+        HebrewEventRepository(AppDatabase.getInstance(application).hebrewEventDao())
+
+    val calendarSyncManager: CalendarSyncManager = CalendarSyncManager(application)
+
+    private val _events = Channel<UiEvent>(Channel.BUFFERED)
+    val uiEvents = _events.receiveAsFlow()
+
+    // Language — persisted, so the choice survives a restart.
+    private val _language = MutableStateFlow(
+        AppLanguage.entries.firstOrNull { it.code == prefs.getString(KEY_LANGUAGE, null) }
+            ?: AppLanguage.HEBREW
+    )
     val language: StateFlow<AppLanguage> = _language.asStateFlow()
 
-    val strings: AppStrings
-        get() = AppStrings(_language.value)
+    private val strings: AppStrings get() = AppStrings(_language.value)
 
     fun setLanguage(newLanguage: AppLanguage) {
         _language.value = newLanguage
+        prefs.edit().putString(KEY_LANGUAGE, newLanguage.code).apply()
     }
 
-    // Database events
     val events: StateFlow<List<HebrewEventEntity>> = repository.allEvents
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // Calendar sync state
     private val _calendars = MutableStateFlow<List<DeviceCalendarInfo>>(emptyList())
     val calendars: StateFlow<List<DeviceCalendarInfo>> = _calendars.asStateFlow()
 
@@ -63,166 +84,168 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
-    private val _statusMessage = MutableStateFlow<String?>(null)
-    val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
+    /**
+     * Events queued in the add dialog. Held here rather than in composition so a rotation does not
+     * discard a batch the user spent minutes assembling.
+     */
+    private val _stagedEvents = MutableStateFlow<List<EventDraft>>(emptyList())
+    val stagedEvents: StateFlow<List<EventDraft>> = _stagedEvents.asStateFlow()
 
-    // Calendar View Navigation
-    private val todayCal = Calendar.getInstance()
-    private val _calViewYear = MutableStateFlow(todayCal.get(Calendar.YEAR))
+    // Calendar view navigation
+    private val _calViewYear = MutableStateFlow(Calendar.getInstance().get(Calendar.YEAR))
     val calViewYear: StateFlow<Int> = _calViewYear.asStateFlow()
 
-    private val _calViewMonth = MutableStateFlow(todayCal.get(Calendar.MONTH) + 1)
+    private val _calViewMonth = MutableStateFlow(Calendar.getInstance().get(Calendar.MONTH) + 1)
     val calViewMonth: StateFlow<Int> = _calViewMonth.asStateFlow()
 
-    private val _selectedDay = MutableStateFlow(todayCal.get(Calendar.DAY_OF_MONTH))
+    private val _selectedDay = MutableStateFlow(Calendar.getInstance().get(Calendar.DAY_OF_MONTH))
     val selectedDay: StateFlow<Int> = _selectedDay.asStateFlow()
+
+    /** Set when the user taps "add event for this day" so the dialog can open on that date. */
+    private val _prefillDate = MutableStateFlow<HebrewDateInfo?>(null)
+    val prefillDate: StateFlow<HebrewDateInfo?> = _prefillDate.asStateFlow()
 
     init {
         refreshCalendarPermissions()
     }
 
     fun refreshCalendarPermissions() {
-        val hasPerm = calendarSyncManager.hasCalendarPermission()
-        _hasCalendarPermission.value = hasPerm
-        if (hasPerm) {
-            loadDeviceCalendars()
-        }
+        val granted = calendarSyncManager.hasCalendarPermission()
+        _hasCalendarPermission.value = granted
+        if (granted) loadDeviceCalendars()
     }
 
     fun loadDeviceCalendars() {
-        viewModelScope.launch {
-            val list = calendarSyncManager.getAvailableCalendars()
-            _calendars.value = list
-        }
+        viewModelScope.launch { _calendars.value = calendarSyncManager.getAvailableCalendars() }
     }
 
     fun setCalendarMonth(year: Int, month: Int) {
         _calViewYear.value = year
         _calViewMonth.value = month
+        clampSelectedDay()
     }
 
     fun prevCalendarMonth() {
-        var y = _calViewYear.value
-        var m = _calViewMonth.value - 1
-        if (m < 1) {
-            m = 12
-            y--
-        }
-        _calViewYear.value = y
-        _calViewMonth.value = m
+        val m = _calViewMonth.value - 1
+        if (m < 1) { _calViewMonth.value = 12; _calViewYear.value-- } else _calViewMonth.value = m
+        clampSelectedDay()
     }
 
     fun nextCalendarMonth() {
-        var y = _calViewYear.value
-        var m = _calViewMonth.value + 1
-        if (m > 12) {
-            m = 1
-            y++
-        }
-        _calViewYear.value = y
-        _calViewMonth.value = m
+        val m = _calViewMonth.value + 1
+        if (m > 12) { _calViewMonth.value = 1; _calViewYear.value++ } else _calViewMonth.value = m
+        clampSelectedDay()
     }
 
     fun setSelectedDay(day: Int) {
-        _selectedDay.value = day
-    }
-
-    fun clearStatusMessage() {
-        _statusMessage.value = null
+        _selectedDay.value = day.coerceIn(1, daysInViewMonth())
     }
 
     /**
-     * Creates a new dedicated Hebrew events calendar on the device.
+     * Keeps the selection inside the visible month. Without this, moving from the 31st to a short
+     * month left `selectedDay` out of range and Calendar's lenient mode silently rolled the date
+     * into the following month.
      */
+    private fun clampSelectedDay() {
+        _selectedDay.value = _selectedDay.value.coerceIn(1, daysInViewMonth())
+    }
+
+    private fun daysInViewMonth(): Int = Calendar.getInstance().apply {
+        clear()
+        set(_calViewYear.value, _calViewMonth.value - 1, 1)
+    }.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+    fun requestAddEventForDate(date: HebrewDateInfo?) { _prefillDate.value = date }
+    fun consumePrefillDate() { _prefillDate.value = null }
+
     suspend fun createNewHebrewCalendar(name: String): Long? {
         val id = calendarSyncManager.createNewHebrewCalendar(name)
-        if (id != null) {
-            loadDeviceCalendars()
-        }
+        if (id != null) loadDeviceCalendars()
         return id
     }
 
-    /**
-     * Item representation for single or batch event creation.
-     */
     data class EventDraft(
         val title: String,
-        val eventType: String,
-        val recurrenceType: String,
+        val eventType: EventType,
+        val recurrenceType: RecurrenceType,
         val hebrewDateInfo: HebrewDateInfo,
         val leapYearRule: LeapYearRule = LeapYearRule.STANDARD_ADAR_II,
         val yearsCount: Int = 20
     )
 
-    /**
-     * Adds an event, calculates occurrences based on chosen yearsCount,
-     * saves to Room, and optionally syncs to device calendar.
-     */
-    fun saveEvent(
-        title: String,
-        eventType: String,
-        recurrenceType: String,
-        hebrewDateInfo: HebrewDateInfo,
-        leapYearRule: LeapYearRule,
-        yearsCount: Int = 20,
-        targetCalendarId: Long?,
-        targetCalendarName: String?,
-        isIcsOnly: Boolean,
-        onComplete: (Boolean, Intent?) -> Unit
-    ) {
-        saveBatchEvents(
-            events = listOf(
-                EventDraft(
-                    title = title,
-                    eventType = eventType,
-                    recurrenceType = recurrenceType,
-                    hebrewDateInfo = hebrewDateInfo,
-                    leapYearRule = leapYearRule,
-                    yearsCount = yearsCount
-                )
-            ),
-            targetCalendarId = targetCalendarId,
-            targetCalendarName = targetCalendarName,
-            isIcsOnly = isIcsOnly,
-            onComplete = onComplete
+    fun stageEvent(draft: EventDraft) { _stagedEvents.value = _stagedEvents.value + draft }
+    fun unstageEvent(index: Int) {
+        _stagedEvents.value = _stagedEvents.value.filterIndexed { i, _ -> i != index }
+    }
+    fun clearStagedEvents() { _stagedEvents.value = emptyList() }
+
+    private fun occurrencesFor(
+        recurrence: RecurrenceType,
+        hebrewDay: Int,
+        hebrewMonth: Int,
+        hebrewYear: Int,
+        rule: LeapYearRule,
+        years: Int
+    ): List<CalculatedOccurrence> = when (recurrence) {
+        RecurrenceType.MONTHLY -> HebrewCalendarEngine.calculateMonthlyOccurrences(
+            originHebrewDay = hebrewDay,
+            monthsCount = years * 12
+        )
+        RecurrenceType.YEARLY -> HebrewCalendarEngine.calculateYearlyOccurrences(
+            originHebrewYear = hebrewYear,
+            originHebrewMonth = hebrewMonth,
+            originHebrewDay = hebrewDay,
+            leapYearRule = rule,
+            yearsCount = years
         )
     }
 
+    private fun occurrencesFor(event: HebrewEventEntity): List<CalculatedOccurrence> = occurrencesFor(
+        event.recurrenceType,
+        event.hebrewDay,
+        event.hebrewMonth,
+        event.hebrewYear,
+        event.leapYearRule,
+        event.yearsCount
+    )
+
+    private fun syncLabels() = SyncLabels(
+        hebrewDateLabel = strings.hebrewDateLabel,
+        createdBy = strings.createdBy
+    )
+
     /**
-     * Adds multiple events in a single batch, syncing them together to the target calendar or ICS.
+     * Saves the staged drafts plus [extra], syncing to a calendar or producing an ICS file.
+     * Guarded by [isSyncing]: the save button is disabled while this runs, which is what stops a
+     * double tap from writing two full sets of calendar rows.
      */
-    fun saveBatchEvents(
-        events: List<EventDraft>,
+    fun saveEvents(
+        extra: EventDraft?,
         targetCalendarId: Long?,
         targetCalendarName: String?,
-        isIcsOnly: Boolean,
-        onComplete: (Boolean, Intent?) -> Unit
+        isIcsOnly: Boolean
     ) {
+        if (_isSyncing.value) return
+        val drafts = _stagedEvents.value + listOfNotNull(extra)
+        if (drafts.isEmpty()) return
+
         viewModelScope.launch {
             _isSyncing.value = true
+            val localStrings = strings
             try {
                 var totalSynced = 0
-                val allOccurrencesWithTitle = mutableListOf<Pair<String, List<CalculatedOccurrence>>>()
+                val icsEvents = mutableListOf<IcsEvent>()
 
-                for (draft in events) {
-                    val count = if (draft.yearsCount > 0) draft.yearsCount else 20
-                    val occurrences = if (draft.recurrenceType == "MONTHLY") {
-                        HebrewCalendarEngine.calculateMonthlyOccurrences(
-                            originHebrewDay = draft.hebrewDateInfo.hebrewDay,
-                            monthsCount = count * 12
-                        )
-                    } else {
-                        HebrewCalendarEngine.calculateYearlyOccurrences(
-                            originHebrewYear = draft.hebrewDateInfo.hebrewYear,
-                            originHebrewMonth = draft.hebrewDateInfo.hebrewMonth,
-                            originHebrewDay = draft.hebrewDateInfo.hebrewDay,
-                            leapYearRule = draft.leapYearRule,
-                            yearsCount = count,
-                            startFromCurrentYear = true
-                        )
-                    }
-
-                    val customEventId = "hevent_${draft.hebrewDateInfo.hebrewYear}_${draft.hebrewDateInfo.hebrewMonth}_${draft.hebrewDateInfo.hebrewDay}_${System.currentTimeMillis()}"
+                for (draft in drafts) {
+                    val occurrences = occurrencesFor(
+                        draft.recurrenceType,
+                        draft.hebrewDateInfo.hebrewDay,
+                        draft.hebrewDateInfo.hebrewMonth,
+                        draft.hebrewDateInfo.hebrewYear,
+                        draft.leapYearRule,
+                        draft.yearsCount.coerceAtLeast(1)
+                    )
+                    val syncTag = CalendarSyncManager.newSyncTag()
 
                     var syncedCount = 0
                     if (!isIcsOnly && targetCalendarId != null && calendarSyncManager.hasCalendarPermission()) {
@@ -230,161 +253,159 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             calendarId = targetCalendarId,
                             eventTitle = draft.title,
                             occurrences = occurrences,
-                            customEventId = customEventId
+                            syncTag = syncTag,
+                            labels = syncLabels(),
+                            noteFor = { localStrings.noteText(it) }
                         )
                         totalSynced += syncedCount
                     }
 
-                    val entity = HebrewEventEntity(
-                        title = draft.title,
-                        eventType = draft.eventType,
-                        recurrenceType = draft.recurrenceType,
-                        hebrewDay = draft.hebrewDateInfo.hebrewDay,
-                        hebrewMonth = draft.hebrewDateInfo.hebrewMonth,
-                        hebrewYear = draft.hebrewDateInfo.hebrewYear,
-                        hebrewDateFormatted = draft.hebrewDateInfo.formattedHe,
-                        gregorianDay = draft.hebrewDateInfo.gregorianDay,
-                        gregorianMonth = draft.hebrewDateInfo.gregorianMonth,
-                        gregorianYear = draft.hebrewDateInfo.gregorianYear,
-                        leapYearRule = draft.leapYearRule.id,
-                        yearsCount = occurrences.size,
-                        targetCalendarId = if (!isIcsOnly) targetCalendarId else null,
-                        targetCalendarName = if (!isIcsOnly) targetCalendarName else null,
-                        isSyncedToCalendar = syncedCount > 0,
-                        syncedEventsCount = syncedCount
+                    repository.insertEvent(
+                        HebrewEventEntity(
+                            title = draft.title,
+                            eventType = draft.eventType,
+                            recurrenceType = draft.recurrenceType,
+                            hebrewDay = draft.hebrewDateInfo.hebrewDay,
+                            hebrewMonth = draft.hebrewDateInfo.hebrewMonth,
+                            hebrewYear = draft.hebrewDateInfo.hebrewYear,
+                            hebrewDateFormatted = draft.hebrewDateInfo.formattedHe,
+                            gregorianDay = draft.hebrewDateInfo.gregorianDay,
+                            gregorianMonth = draft.hebrewDateInfo.gregorianMonth,
+                            gregorianYear = draft.hebrewDateInfo.gregorianYear,
+                            leapYearRule = draft.leapYearRule,
+                            // yearsCount is what the user asked for; occurrenceCount is what it produced.
+                            yearsCount = draft.yearsCount,
+                            occurrenceCount = occurrences.size,
+                            syncTag = syncTag,
+                            targetCalendarId = targetCalendarId.takeUnless { isIcsOnly },
+                            targetCalendarName = targetCalendarName.takeUnless { isIcsOnly },
+                            isSyncedToCalendar = syncedCount > 0,
+                            syncedEventsCount = syncedCount
+                        )
                     )
-                    repository.insertEvent(entity)
-                    allOccurrencesWithTitle.add(draft.title to occurrences)
+                    icsEvents += IcsEvent(draft.title, syncTag, occurrences)
                 }
 
-                var shareIntent: Intent? = null
-                if (isIcsOnly && allOccurrencesWithTitle.isNotEmpty()) {
-                    val combinedIcs = IcsExporter.generateCombinedIcs(
-                        calendarName = if (events.size == 1) events[0].title else "אירועים עבריים",
-                        events = allOccurrencesWithTitle
-                    )
+                clearStagedEvents()
 
-                    shareIntent = IcsExporter.createShareIntent(
-                        context = getApplication(),
-                        fileName = if (events.size == 1) events[0].title else "hebrew_events_batch",
-                        icsContent = combinedIcs
+                if (isIcsOnly) {
+                    val name = if (drafts.size == 1) drafts[0].title else "hebrew_events"
+                    val intent = buildShareIntent(
+                        calendarName = name,
+                        events = icsEvents,
+                        fileName = name,
+                        localStrings = localStrings
                     )
-                    _statusMessage.value = strings.icsExportReady
+                    _events.send(UiEvent.Share(intent, localStrings.exportIcs))
                 } else {
-                    _statusMessage.value = if (totalSynced > 0) {
-                        "${strings.syncSuccess} ($totalSynced)"
-                    } else if (targetCalendarId != null) {
-                        if (strings.isHe) "האירועים נשמרו באפליקציה (סנכרון היומן לא הושלם)" else "Events saved in app (calendar sync not completed)"
-                    } else {
-                        strings.eventSaved
-                    }
+                    _events.send(
+                        UiEvent.Message(
+                            when {
+                                totalSynced > 0 -> "${localStrings.syncSuccess} ($totalSynced)"
+                                targetCalendarId != null -> localStrings.syncPartial
+                                else -> localStrings.eventSaved
+                            }
+                        )
+                    )
                 }
-
-                onComplete(true, shareIntent)
+                _events.send(UiEvent.Saved)
             } catch (e: Exception) {
-                e.printStackTrace()
-                _statusMessage.value = e.localizedMessage
-                onComplete(false, null)
+                // Never surface a raw exception message to the user.
+                Log.e(TAG, "Saving events failed", e)
+                _events.send(UiEvent.Message(localStrings.genericError))
             } finally {
                 _isSyncing.value = false
             }
         }
     }
 
-    /**
-     * Deletes an event from the database and removes all its occurrences from the device calendar.
-     */
+    /** Deletes one event and only the calendar rows it created. */
     fun deleteEvent(event: HebrewEventEntity) {
         viewModelScope.launch {
+            val localStrings = strings
             if (calendarSyncManager.hasCalendarPermission()) {
-                calendarSyncManager.deleteEventsByTitle(event.title, event.targetCalendarId)
+                calendarSyncManager.deleteSyncedEvents(
+                    syncTag = event.syncTag,
+                    title = event.title,
+                    calendarId = event.targetCalendarId
+                )
             }
             repository.deleteEvent(event)
-            _statusMessage.value = strings.deleteSuccess
+            _events.send(UiEvent.Message(localStrings.deleteSuccess))
         }
     }
 
     /**
-     * Bulk deletes all events matching a given title from device calendar and database.
+     * Bulk delete by title. Resolves the title to rows we own first, then deletes each row's own
+     * calendar events by its sync tag — the title never reaches the calendar provider as a bare
+     * match, which is what previously let this wipe identically-named events the user created.
      */
-    fun deleteEventsByName(name: String, onResult: (Int) -> Unit) {
+    fun deleteEventsByName(name: String) {
         viewModelScope.launch {
-            var deletedFromCal = 0
+            val localStrings = strings
+            val matches = repository.getEventsByTitle(name)
+            if (matches.isEmpty()) {
+                _events.send(UiEvent.Message(localStrings.noEventsToDelete))
+                return@launch
+            }
+            var deletedFromCalendar = 0
             if (calendarSyncManager.hasCalendarPermission()) {
-                deletedFromCal = calendarSyncManager.deleteEventsByTitle(name)
+                for (event in matches) {
+                    deletedFromCalendar += calendarSyncManager.deleteSyncedEvents(
+                        syncTag = event.syncTag,
+                        title = event.title,
+                        calendarId = event.targetCalendarId
+                    )
+                }
             }
-            val deletedFromDb = repository.deleteEventsByTitle(name)
-            _statusMessage.value = "$deletedFromCal ${strings.eventsDeletedFromCal}"
-            onResult(deletedFromCal + deletedFromDb)
+            repository.deleteEventsByIds(matches.map { it.id })
+            _events.send(
+                UiEvent.Message("$deletedFromCalendar ${localStrings.eventsDeletedFromCal}")
+            )
         }
     }
 
-    /**
-     * Generates a shareable ICS intent for a single event.
-     */
-    fun exportEventToIcs(event: HebrewEventEntity): Intent {
-        val occurrences = if (event.recurrenceType == "MONTHLY") {
-            HebrewCalendarEngine.calculateMonthlyOccurrences(
-                originHebrewDay = event.hebrewDay,
-                monthsCount = 120
-            )
-        } else {
-            HebrewCalendarEngine.calculateYearlyOccurrences(
-                originHebrewYear = event.hebrewYear,
-                originHebrewMonth = event.hebrewMonth,
-                originHebrewDay = event.hebrewDay,
-                leapYearRule = LeapYearRule.valueOf(event.leapYearRule),
-                yearsCount = event.yearsCount,
-                startFromCurrentYear = true
-            )
+    /** ICS export. Projection and file IO both happen off the main thread. */
+    fun exportEventsToIcs(eventsToExport: List<HebrewEventEntity>, singleTitle: String? = null) {
+        if (eventsToExport.isEmpty()) return
+        viewModelScope.launch {
+            val localStrings = strings
+            try {
+                val name = singleTitle ?: "all_hebrew_events"
+                val intent = withContext(Dispatchers.Default) {
+                    buildShareIntent(
+                        calendarName = name,
+                        events = eventsToExport.map {
+                            IcsEvent(
+                                title = it.title,
+                                uidSeed = it.syncTag ?: "row-${it.id}",
+                                occurrences = occurrencesFor(it)
+                            )
+                        },
+                        fileName = name,
+                        localStrings = localStrings
+                    )
+                }
+                _events.send(UiEvent.Share(intent, localStrings.exportIcs))
+            } catch (e: Exception) {
+                Log.e(TAG, "ICS export failed", e)
+                _events.send(UiEvent.Message(localStrings.exportFailed))
+            }
         }
-
-        val ics = IcsExporter.generateIcsContent(
-            calendarName = "לוח עברי - ${event.title}",
-            eventTitle = event.title,
-            occurrences = occurrences,
-            customEventId = "hevent_${event.id}_${event.hebrewYear}_${event.hebrewMonth}_${event.hebrewDay}"
-        )
-
-        return IcsExporter.createShareIntent(
-            context = getApplication(),
-            fileName = event.title,
-            icsContent = ics
-        )
     }
 
-    /**
-     * Generates a combined ICS file containing all scheduled events in the database.
-     */
-    fun exportAllEventsToIcs(eventsList: List<HebrewEventEntity>): Intent {
-        val pairs = eventsList.map { event ->
-            val occs = if (event.recurrenceType == "MONTHLY") {
-                HebrewCalendarEngine.calculateMonthlyOccurrences(
-                    originHebrewDay = event.hebrewDay,
-                    monthsCount = 120
-                )
-            } else {
-                HebrewCalendarEngine.calculateYearlyOccurrences(
-                    originHebrewYear = event.hebrewYear,
-                    originHebrewMonth = event.hebrewMonth,
-                    originHebrewDay = event.hebrewDay,
-                    leapYearRule = LeapYearRule.valueOf(event.leapYearRule),
-                    yearsCount = event.yearsCount,
-                    startFromCurrentYear = true
-                )
-            }
-            Pair(event.title, occs)
-        }
-
-        val ics = IcsExporter.generateCombinedIcs(
-            calendarName = "כל האירועים העבריים",
-            events = pairs
+    private suspend fun buildShareIntent(
+        calendarName: String,
+        events: List<IcsEvent>,
+        fileName: String,
+        localStrings: AppStrings
+    ): Intent = withContext(Dispatchers.IO) {
+        val ics = IcsExporter.generateIcs(
+            calendarName = calendarName,
+            events = events,
+            labels = syncLabels(),
+            noteFor = { localStrings.noteText(it) }
         )
-
-        return IcsExporter.createShareIntent(
-            context = getApplication(),
-            fileName = "all_hebrew_events",
-            icsContent = ics
-        )
+        IcsExporter.createShareIntent(getApplication(), fileName, ics)
     }
 }
