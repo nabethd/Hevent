@@ -58,7 +58,18 @@ KEYSTORE_PATH=/path/to/upload.jks STORE_PASSWORD=... KEY_PASSWORD=... ./gradlew 
 
 The key alias is `upload`.
 
-### A note on installing CI builds
+### Installing a CI build
+
+Each run uploads two artifacts:
+
+| artifact | size | notes |
+|---|---|---|
+| `app-release-apk` | ~1.4 MB | shrunk by R8 — install this one |
+| `app-debug-apk` | ~17 MB | unshrunk, bundles the Compose tooling; for debugging |
+
+Both are signed with the same key, so either can replace the other without an uninstall.
+
+### A note on signing
 
 CI signs the APK with the `DEBUG_KEYSTORE_BASE64` repository secret if it is set, and with a
 freshly generated throwaway key otherwise. A new key every run means every APK has a *different*

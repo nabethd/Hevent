@@ -64,6 +64,35 @@ jobs:
           path: app/build/reports/tests/
           retention-days: 7
 
+      # The debug APK is ~17 MB: debug builds never run R8 and bundle the Compose tooling.
+      # This is the same app shrunk, signed with the same key so it upgrades in place.
+      - name: Build Release APK
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/debug.keystore
+          KEY_ALIAS: androiddebugkey
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Report APK sizes
+        run: |
+          {
+            echo "| build | size |"
+            echo "|---|---|"
+            for f in app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk; do
+              [ -f "$f" ] && printf '| %s | %s |\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Listed first so it is the obvious one to download.
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:

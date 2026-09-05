@@ -27,7 +27,9 @@ android {
       create("release") {
         storeFile = file(keystorePath)
         storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = "upload"
+        // Configurable so CI can produce a shrunk, installable build signed with the same key as
+        // the debug one; a real upload key overrides it via the environment.
+        keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
         keyPassword = System.getenv("KEY_PASSWORD")
       }
     }
