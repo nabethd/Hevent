@@ -90,3 +90,21 @@ enum class LeapYearRule {
         fun fromId(id: String?): LeapYearRule = entries.firstOrNull { it.name == id } ?: STANDARD_ADAR_II
     }
 }
+
+/**
+ * Reminder offsets for all-day events.
+ *
+ * An all-day row starts at midnight, and the calendar provider counts reminders *backwards* from
+ * the start, so "09:00 on the day itself" is not expressible — 09:00 the day before is 900 minutes
+ * back. These are the two offsets that land at a sensible hour.
+ */
+enum class ReminderOption(val minutes: Int?) {
+    NONE(null),
+    DAY_BEFORE(900),
+    WEEK_BEFORE(900 + 6 * 24 * 60);
+
+    companion object {
+        fun fromMinutes(minutes: Int?): ReminderOption =
+            entries.firstOrNull { it.minutes == minutes } ?: NONE
+    }
+}

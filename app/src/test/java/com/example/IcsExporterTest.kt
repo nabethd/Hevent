@@ -75,3 +75,41 @@ class IcsExporterTest {
         assertEquals("SUMMARY:Birthday\\; party\\, at home\\\\shed", summary)
     }
 }
+
+class IcsAlarmTest {
+    private val labels = SyncLabels(hebrewDateLabel = "Hebrew date", createdBy = "Hebrew Calendar Sync")
+
+    private fun ics(reminder: Int?) = IcsExporter.generateIcs(
+        calendarName = "Test",
+        events = listOf(
+            IcsEvent(
+                title = "Birthday",
+                uidSeed = "hcs-x",
+                occurrences = listOf(
+                    CalculatedOccurrence(
+                        occurrenceIndex = 1, targetHebrewYear = 5786, targetHebrewMonth = 7,
+                        targetHebrewDay = 28, hebrewDateFormatted = "x",
+                        gregorianYear = 2025, gregorianMonth = 10, gregorianDay = 20,
+                        gregorianDateFormatted = "20/10/2025", isLeapYear = false
+                    )
+                ),
+                reminderMinutes = reminder
+            )
+        ),
+        labels = labels
+    ).replace("\r\n ", "")
+
+    @Test
+    fun `no VALARM when no reminder is set`() {
+        assertTrue(!ics(null).contains("BEGIN:VALARM"))
+    }
+
+    @Test
+    fun `VALARM triggers before the event`() {
+        val out = ics(900)
+        assertTrue(out.contains("BEGIN:VALARM"))
+        assertTrue(out.contains("ACTION:DISPLAY"))
+        assertTrue(out.contains("TRIGGER:-PT900M"))
+        assertTrue(out.contains("END:VALARM"))
+    }
+}

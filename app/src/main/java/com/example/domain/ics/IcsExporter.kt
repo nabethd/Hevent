@@ -21,7 +21,9 @@ data class IcsEvent(
      * copy of the whole series instead of updating it.
      */
     val uidSeed: String,
-    val occurrences: List<CalculatedOccurrence>
+    val occurrences: List<CalculatedOccurrence>,
+    /** Minutes before the event to alarm, or null for no VALARM. */
+    val reminderMinutes: Int? = null
 )
 
 object IcsExporter {
@@ -79,6 +81,14 @@ object IcsExporter {
                 sb.fold("DESCRIPTION:" + escapeText(description))
                 sb.fold("STATUS:CONFIRMED")
                 sb.fold("TRANSP:TRANSPARENT")
+                event.reminderMinutes?.let { minutes ->
+                    sb.fold("BEGIN:VALARM")
+                    sb.fold("ACTION:DISPLAY")
+                    sb.fold("DESCRIPTION:" + escapeText(event.title))
+                    // Negative duration = before the event start, per RFC 5545 3.8.6.3.
+                    sb.fold("TRIGGER:-PT${minutes}M")
+                    sb.fold("END:VALARM")
+                }
                 sb.fold("END:VEVENT")
             }
         }

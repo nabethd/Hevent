@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Schedule
@@ -79,6 +80,7 @@ import com.example.ui.theme.BirthdayContainer
 import com.example.ui.theme.GeneralEventAccent
 import com.example.ui.theme.GeneralEventContainer
 import com.example.ui.theme.HeroGradient
+import com.example.ui.theme.HeroGradientDark
 import com.example.ui.theme.HolidayAccent
 import com.example.ui.theme.HolidayContainer
 import com.example.ui.theme.YahrtzeitAccent
@@ -102,6 +104,7 @@ fun HomeScreen(
     events: List<HebrewEventEntity>,
     onAddEventClick: () -> Unit,
     onDeleteEvent: (HebrewEventEntity) -> Unit,
+    onEditEvent: (HebrewEventEntity) -> Unit,
     onExportIcs: (HebrewEventEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -126,7 +129,7 @@ fun HomeScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Brush.linearGradient(HeroGradient))
+                            .background(Brush.linearGradient(if (LocalIsDarkTheme.current) HeroGradientDark else HeroGradient))
                             .padding(22.dp)
                     ) {
                         Column {
@@ -211,60 +214,33 @@ fun HomeScreen(
                             HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Bottom Hero Row: Scheduled Count & Quick Add Action
+                            // Scheduled count. The "new event" button that used to sit beside it
+                            // duplicated the FAB two rows below.
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    modifier = Modifier.size(24.dp)
                                 ) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = Color.White.copy(alpha = 0.2f),
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                Icons.Default.CheckCircle,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                        }
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
                                     }
-                                    Text(
-                                        text = "${events.size} ${strings.eventsCountLabel}",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
-                                    )
                                 }
-
-                                Button(
-                                    onClick = onAddEventClick,
-                                    shape = RoundedCornerShape(50),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color.White,
-                                        contentColor = MaterialTheme.colorScheme.primary
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (strings.isHe) "אירוע חדש" else "New Event",
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
-                                }
+                                Text(
+                                    text = "${events.size} ${strings.eventsCountLabel}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
                             }
                         }
                     }
@@ -356,7 +332,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (strings.isHe) "אירועים במעקב" else "Tracked Events",
+                            text = strings.trackedEvents,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -381,6 +357,7 @@ fun HomeScreen(
                         event = event,
                         strings = strings,
                         onExportIcs = { onExportIcs(event) },
+                        onEditClick = { onEditEvent(event) },
                         onDeleteClick = { eventToDelete = event }
                     )
                 }
@@ -454,6 +431,7 @@ fun HebrewEventCard(
     event: HebrewEventEntity,
     strings: AppStrings,
     onExportIcs: () -> Unit,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -578,6 +556,20 @@ fun HebrewEventCard(
                                 )
                             }
                         }
+                    }
+
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("edit_event_${event.id}")
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = strings.edit,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
 
                     // Delete button
@@ -791,7 +783,7 @@ private fun categoryStyle(type: EventType, strings: AppStrings): CategoryStyle {
             Icons.Default.AutoAwesome,
             if (dark) HolidayAccentDark else HolidayAccent,
             if (dark) HolidayContainerDark else HolidayContainer,
-            if (strings.isHe) "חג / מועד" else "Holiday"
+            strings.typeHoliday
         )
         EventType.CUSTOM -> CategoryStyle(
             Icons.Default.Bookmark,

@@ -61,7 +61,12 @@ import com.example.domain.hebrew.HebrewCalendarEngine
 import com.example.domain.model.HebrewDateInfo
 import com.example.domain.model.RecurrenceType
 import com.example.ui.i18n.AppStrings
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import java.text.DateFormatSymbols
 import java.util.Calendar
+import java.util.Locale
 
 data class CalendarDayItem(
     val dayOfMonth: Int,
@@ -86,6 +91,12 @@ fun CalendarViewScreen(
     onAddEventForDate: (HebrewDateInfo) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // From the active locale rather than a hardcoded pair of arrays — these were the last
+    // bilingual literals left in the UI, and they were rebuilt on every recomposition.
+    val monthNames = remember(strings.lang) {
+        DateFormatSymbols(Locale(strings.lang.code)).months
+    }
+
     val todayCal = remember { Calendar.getInstance() }
     val todayYear = todayCal.get(Calendar.YEAR)
     val todayMonth = todayCal.get(Calendar.MONTH) + 1
@@ -243,30 +254,22 @@ fun CalendarViewScreen(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = if (strings.isHe) "החודש הקודם" else "Previous month"
+                        contentDescription = strings.prevMonth
                     )
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    val gregorianMonthNamesHe = listOf(
-                        "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
-                        "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"
-                    )
-                    val gregorianMonthNamesEn = listOf(
-                        "January", "February", "March", "April", "May", "June",
-                        "July", "August", "September", "October", "November", "December"
-                    )
-
-                    val monthName = if (strings.isHe) gregorianMonthNamesHe[month - 1] else gregorianMonthNamesEn[month - 1]
                     Text(
-                        text = "$monthName $year",
+                        text = "${monthNames[month - 1]} $year",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
                     // Display Hebrew Month span
-                    val midMonthJd = HebrewCalendarEngine.fromGregorian(year, month, 15)
+                    val midMonthJd = remember(year, month) {
+                        HebrewCalendarEngine.fromGregorian(year, month, 15)
+                    }
                     Text(
                         text = "${midMonthJd.hebrewMonthNameHe} ${midMonthJd.hebrewYearStr}",
                         style = MaterialTheme.typography.bodySmall,
@@ -281,7 +284,7 @@ fun CalendarViewScreen(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = if (strings.isHe) "החודש הבא" else "Next month"
+                        contentDescription = strings.nextMonth
                     )
                 }
 
@@ -345,9 +348,20 @@ fun CalendarViewScreen(
                     else -> MaterialTheme.colorScheme.surface
                 }
 
+                val cellDescription = buildString {
+                    append(item.dayOfMonth).append(' ').append(monthNames[item.month - 1])
+                    append(", ").append(item.hebrewDateInfo.formattedHe)
+                    if (item.isToday) append(", ").append(strings.todayBtn)
+                    if (hasEventOnDay && item.isCurrentMonth) append(", ").append(strings.dayHasEvents)
+                }
+
                 Box(
                     modifier = Modifier
                         .aspectRatio(1f)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = cellDescription
+                            selected = isSelected
+                        }
                         .clip(RoundedCornerShape(12.dp))
                         .background(backgroundColor)
                         .then(
@@ -456,7 +470,7 @@ fun CalendarViewScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (strings.isHe) "אירוע ליום זה" else "Add Event", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text(strings.addEventForDay, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

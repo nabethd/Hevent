@@ -2,6 +2,7 @@ package com.example
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.test.core.app.ApplicationProvider
 import com.example.data.db.HebrewEventEntity
 import com.example.domain.model.EventType
 import com.example.domain.model.LeapYearRule
@@ -28,7 +29,10 @@ class GreetingScreenshotTest {
 
     @Test
     fun app_home_screenshot() {
-        val strings = AppStrings(AppLanguage.HEBREW)
+        val strings = AppStrings(
+            ApplicationProvider.getApplicationContext<android.content.Context>(),
+            AppLanguage.HEBREW
+        )
         val mockEvents = listOf(
             HebrewEventEntity(
                 id = 1,
@@ -60,6 +64,7 @@ class GreetingScreenshotTest {
                     events = mockEvents,
                     onAddEventClick = {},
                     onDeleteEvent = {},
+                    onEditEvent = {},
                     onExportIcs = {}
                 )
             }
