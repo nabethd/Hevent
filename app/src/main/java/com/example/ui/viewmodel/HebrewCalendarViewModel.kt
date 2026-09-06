@@ -219,6 +219,9 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
             originHebrewDay = hebrewDay,
             monthsCount = years * 12
         )
+        RecurrenceType.ONE_TIME -> listOf(
+            HebrewCalendarEngine.singleOccurrence(hebrewYear, hebrewMonth, hebrewDay)
+        )
         RecurrenceType.YEARLY -> HebrewCalendarEngine.calculateYearlyOccurrences(
             originHebrewYear = hebrewYear,
             originHebrewMonth = hebrewMonth,

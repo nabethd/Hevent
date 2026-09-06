@@ -74,7 +74,16 @@ enum class EventType {
 
 enum class RecurrenceType {
     YEARLY,
-    MONTHLY;
+    MONTHLY,
+
+    /**
+     * A single date, not an anniversary.
+     *
+     * The date entered is the event date itself rather than an origin projected forward, so the
+     * leap-year rule and the duration do not apply. For someone who thinks in Hebrew dates but
+     * just wants one entry in their calendar.
+     */
+    ONE_TIME;
 
     companion object {
         fun fromId(id: String?): RecurrenceType = entries.firstOrNull { it.name == id } ?: YEARLY

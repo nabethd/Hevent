@@ -437,13 +437,17 @@ fun HebrewEventCard(
 ) {
     // Next occurrence calculation
     val nextOccurrences = remember(event) {
-        if (event.recurrenceType == RecurrenceType.MONTHLY) {
-            HebrewCalendarEngine.calculateMonthlyOccurrences(
+        when (event.recurrenceType) {
+            RecurrenceType.ONE_TIME -> listOf(
+                HebrewCalendarEngine.singleOccurrence(
+                    event.hebrewYear, event.hebrewMonth, event.hebrewDay
+                )
+            )
+            RecurrenceType.MONTHLY -> HebrewCalendarEngine.calculateMonthlyOccurrences(
                 originHebrewDay = event.hebrewDay,
                 monthsCount = 3
             )
-        } else {
-            HebrewCalendarEngine.calculateYearlyOccurrences(
+            RecurrenceType.YEARLY -> HebrewCalendarEngine.calculateYearlyOccurrences(
                 originHebrewYear = event.hebrewYear,
                 originHebrewMonth = event.hebrewMonth,
                 originHebrewDay = event.hebrewDay,
@@ -648,7 +652,11 @@ fun HebrewEventCard(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
-                        text = if (event.recurrenceType == RecurrenceType.MONTHLY) strings.recurMonthly else strings.recurYearly,
+                        text = when (event.recurrenceType) {
+                            RecurrenceType.ONE_TIME -> strings.recurOneTimeShort
+                            RecurrenceType.MONTHLY -> strings.recurMonthlyShort
+                            RecurrenceType.YEARLY -> strings.recurYearlyShort
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),

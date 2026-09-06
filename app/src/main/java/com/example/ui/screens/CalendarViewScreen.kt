@@ -195,7 +195,15 @@ fun CalendarViewScreen(
         val yearSpan = (hebrewYears.min())..(hebrewYears.max())
 
         for (event in events) {
-            if (event.recurrenceType == RecurrenceType.MONTHLY) {
+            if (event.recurrenceType == RecurrenceType.ONE_TIME) {
+                // A single date: indexed exactly, never projected across years.
+                val occ = HebrewCalendarEngine.singleOccurrence(
+                    event.hebrewYear, event.hebrewMonth, event.hebrewDay
+                )
+                index.getOrPut(gregorianKey(occ.gregorianYear, occ.gregorianMonth, occ.gregorianDay)) {
+                    mutableListOf()
+                }.add(event)
+            } else if (event.recurrenceType == RecurrenceType.MONTHLY) {
                 for (day in daysInGrid) {
                     val info = day.hebrewDateInfo
                     val landsOn = HebrewCalendarEngine.monthlyDayIn(
@@ -523,7 +531,11 @@ fun CalendarViewScreen(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = if (ev.recurrenceType == RecurrenceType.MONTHLY) strings.recurMonthly else strings.recurYearly,
+                                        text = when (ev.recurrenceType) {
+                                            RecurrenceType.ONE_TIME -> strings.recurOneTimeShort
+                                            RecurrenceType.MONTHLY -> strings.recurMonthlyShort
+                                            RecurrenceType.YEARLY -> strings.recurYearlyShort
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

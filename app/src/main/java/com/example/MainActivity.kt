@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -132,6 +133,10 @@ fun HebrewCalendarApp(
             val account = task.getResult(ApiException::class.java)
             viewModel.setGoogleAccount(account)
         } catch (e: Exception) {
+            // Status 10 (DEVELOPER_ERROR) means no OAuth client matches this package + signing
+            // SHA-1; 12501 is the user cancelling. The toast stays generic, the log does not.
+            val status = (e as? ApiException)?.statusCode
+            Log.e("HebrewCalendarApp", "Google sign-in failed (status=$status)", e)
             Toast.makeText(context, strings.googleAuthFailed, Toast.LENGTH_SHORT).show()
         }
     }

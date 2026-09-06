@@ -162,6 +162,9 @@
     <string name="google_sync_failed">הסנכרון ל-Google נכשל</string>
     <string name="google_calendar_ready">היומן ״%1$s״ מוכן ב-Google Calendar</string>
     <string name="delete_cloud_leftover">האירוע נמחק, אך המופעים ביומן Google לא הוסרו. התחברו ל-Google ונסו שוב.</string>
+    <string name="recur_one_time">חד פעמי (תאריך אחד)</string>
+    <string name="recur_one_time_short">חד פעמי</string>
+    <string name="one_time_notice">האירוע ייווצר בתאריך שנבחר בלבד, ללא חזרות.</string>
     <plurals name="in_days">
         <item quantity="one">בעוד יום</item>
         <item quantity="two">בעוד יומיים</item>

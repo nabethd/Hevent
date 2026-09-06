@@ -230,7 +230,15 @@ fun AddEditEventDialog(
 
     val previewOccurrences by remember {
         derivedStateOf {
-            if (recurrenceType == RecurrenceType.MONTHLY) {
+            if (recurrenceType == RecurrenceType.ONE_TIME) {
+                listOf(
+                    HebrewCalendarEngine.singleOccurrence(
+                        currentHebrewDateInfo.hebrewYear,
+                        currentHebrewDateInfo.hebrewMonth,
+                        currentHebrewDateInfo.hebrewDay
+                    )
+                )
+            } else if (recurrenceType == RecurrenceType.MONTHLY) {
                 HebrewCalendarEngine.calculateMonthlyOccurrences(
                     originHebrewDay = currentHebrewDateInfo.hebrewDay,
                     monthsCount = 5
@@ -754,6 +762,31 @@ fun AddEditEventDialog(
                                     fontWeight = if (recurrenceType == RecurrenceType.MONTHLY) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { recurrenceType = RecurrenceType.ONE_TIME },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = recurrenceType == RecurrenceType.ONE_TIME,
+                                    onClick = { recurrenceType = RecurrenceType.ONE_TIME }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = strings.recurOneTime,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (recurrenceType == RecurrenceType.ONE_TIME) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                            if (recurrenceType == RecurrenceType.ONE_TIME) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = strings.oneTimeNotice,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
 
@@ -861,8 +894,8 @@ fun AddEditEventDialog(
                         }
                     }
 
-                    // Duration (How many years / occurrences)
-                    item {
+                    // Duration — meaningless for a single date.
+                    if (recurrenceType != RecurrenceType.ONE_TIME) item {
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surface

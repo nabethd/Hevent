@@ -318,3 +318,62 @@ class ReminderOptionTest {
         assertEquals(ReminderOption.DAY_BEFORE, ReminderOption.fromMinutes(900))
     }
 }
+
+/** A one-time event is the exact date entered — not an origin projected forward. */
+class SingleOccurrenceTest {
+
+    private val searchRange = 5780..5850
+
+    private fun firstYearWhere(p: (Int) -> Boolean) =
+        searchRange.first(p)
+
+    @Test
+    fun `a single occurrence lands on the exact date given`() {
+        val occ = HebrewCalendarEngine.singleOccurrence(5787, JewishDate.KISLEV, 15)
+
+        assertEquals(5787, occ.targetHebrewYear)
+        assertEquals(JewishDate.KISLEV, occ.targetHebrewMonth)
+        assertEquals(15, occ.targetHebrewDay)
+        assertEquals(1, occ.occurrenceIndex)
+    }
+
+    @Test
+    fun `it matches the conversion of that same Hebrew date`() {
+        val occ = HebrewCalendarEngine.singleOccurrence(5787, JewishDate.KISLEV, 15)
+        val info = HebrewCalendarEngine.fromHebrew(5787, JewishDate.KISLEV, 15)
+
+        assertEquals(info.gregorianYear, occ.gregorianYear)
+        assertEquals(info.gregorianMonth, occ.gregorianMonth)
+        assertEquals(info.gregorianDay, occ.gregorianDay)
+    }
+
+    @Test
+    fun `a past date is allowed rather than skipped`() {
+        // Unlike the recurring projection, which deliberately drops what has already happened.
+        val today = HebrewCalendarEngine.getToday()
+        val occ = HebrewCalendarEngine.singleOccurrence(
+            today.hebrewYear - 3, today.hebrewMonth, today.hebrewDay
+        )
+        assertEquals(today.hebrewYear - 3, occ.targetHebrewYear)
+    }
+
+    @Test
+    fun `an impossible day still gets normalised`() {
+        val shortCheshvan = firstYearWhere {
+            HebrewCalendarEngine.getDaysInMonth(it, JewishDate.CHESHVAN) == 29
+        }
+        val occ = HebrewCalendarEngine.singleOccurrence(shortCheshvan, JewishDate.CHESHVAN, 30)
+
+        assertEquals(JewishDate.KISLEV, occ.targetHebrewMonth)
+        assertEquals(1, occ.targetHebrewDay)
+        assertTrue(occ.notes.contains(OccurrenceNote.CHESHVAN_30_MOVED_TO_KISLEV_1))
+    }
+
+    @Test
+    fun `Adar II in a regular year normalises to Adar`() {
+        val regular = firstYearWhere { !HebrewCalendarEngine.isLeapYear(it) }
+        val occ = HebrewCalendarEngine.singleOccurrence(regular, JewishDate.ADAR_II, 10)
+
+        assertEquals(JewishDate.ADAR, occ.targetHebrewMonth)
+    }
+}

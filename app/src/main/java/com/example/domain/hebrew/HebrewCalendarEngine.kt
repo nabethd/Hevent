@@ -215,6 +215,25 @@ object HebrewCalendarEngine {
         ).mapIndexed { i, occ -> occ.copy(occurrenceIndex = i + 1) }
     }
 
+    /**
+     * A single occurrence on an exact Hebrew date, with no projection.
+     *
+     * Past dates are allowed: the caller may be recording something that already happened. The day
+     * and month are still normalised, so 30 Cheshvan in a short year or Adar II in a regular year
+     * resolve the same way they would in a recurring series.
+     */
+    fun singleOccurrence(
+        hebrewYear: Int,
+        hebrewMonth: Int,
+        hebrewDay: Int
+    ): CalculatedOccurrence = buildOccurrence(
+        targetYear = hebrewYear,
+        targetMonth = normalizeMonth(hebrewYear, hebrewMonth),
+        originDay = hebrewDay,
+        targetIsLeap = isLeapYear(hebrewYear),
+        ruleNote = null
+    ).copy(occurrenceIndex = 1)
+
     /** Which Hebrew day a monthly recurrence lands on in the given month, after clamping. */
     fun monthlyDayIn(hebrewYear: Int, hebrewMonth: Int, originDay: Int): Int =
         originDay.coerceIn(1, getDaysInMonth(hebrewYear, hebrewMonth))
