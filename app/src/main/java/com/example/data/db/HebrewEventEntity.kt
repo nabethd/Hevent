@@ -3,6 +3,7 @@ package com.example.data.db
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.example.domain.model.EventColor
 import com.example.domain.model.EventType
 import com.example.domain.model.LeapYearRule
 import com.example.domain.model.RecurrenceType
@@ -34,6 +35,7 @@ data class HebrewEventEntity(
      * one the user actually entered.
      */
     val afterSunset: Boolean = false,
+    val eventColor: EventColor = EventColor.DEFAULT,
     /** Minutes before the event to fire a reminder, or null for none. */
     val reminderMinutes: Int? = null,
     /** How many years forward the user asked us to project. NOT the number of occurrences. */

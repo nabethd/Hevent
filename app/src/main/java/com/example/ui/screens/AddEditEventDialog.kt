@@ -93,8 +93,17 @@ import com.example.domain.calendar.DeviceCalendarInfo
 import com.example.domain.hebrew.HebrewCalendarEngine
 import com.example.domain.model.CalculatedOccurrence
 import com.example.domain.model.HebrewDateInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import java.util.Locale
+import java.text.DateFormatSymbols
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.domain.model.EventColor
 import com.example.domain.model.EventType
 import com.example.domain.model.RecurrenceType
 import com.example.domain.model.ReminderOption
@@ -154,9 +163,26 @@ fun AddEditEventDialog(
     var hMonth by rememberSaveable { mutableIntStateOf(editingEvent?.hebrewMonth ?: seed.hebrewMonth) }
     var hYear by rememberSaveable { mutableIntStateOf(editingEvent?.hebrewYear ?: seed.hebrewYear) }
 
+    val gregorianMonthNames = remember(strings.lang) {
+        DateFormatSymbols(Locale(strings.lang.code)).months
+    }
+    // Adar II exists only in a leap year, so the month list depends on the year selected.
+    val hebrewMonthOptions = remember(hYear) {
+        buildList {
+            add(JewishDate.TISHREI); add(JewishDate.CHESHVAN); add(JewishDate.KISLEV)
+            add(JewishDate.TEVES); add(JewishDate.SHEVAT); add(JewishDate.ADAR)
+            if (HebrewCalendarEngine.isLeapYear(hYear)) add(JewishDate.ADAR_II)
+            add(JewishDate.NISSAN); add(JewishDate.IYAR); add(JewishDate.SIVAN)
+            add(JewishDate.TAMMUZ); add(JewishDate.AV); add(JewishDate.ELUL)
+        }
+    }
+
     var afterSunset by rememberSaveable { mutableStateOf(editingEvent?.afterSunset ?: false) }
     var reminder by rememberSaveable {
         mutableStateOf(ReminderOption.fromMinutes(editingEvent?.reminderMinutes))
+    }
+    var eventColor by rememberSaveable {
+        mutableStateOf(editingEvent?.eventColor ?: EventColor.DEFAULT)
     }
 
     var recurrenceType by rememberSaveable {
@@ -265,7 +291,8 @@ fun AddEditEventDialog(
             leapYearRule = leapYearRule,
             yearsCount = yearsDuration,
             afterSunset = afterSunset && !isHebrewInputMode,
-            reminderMinutes = reminder.minutes
+            reminderMinutes = reminder.minutes,
+            eventColor = eventColor
         )
 
     fun performSave() {
@@ -589,63 +616,66 @@ fun AddEditEventDialog(
                                 Spacer(modifier = Modifier.height(12.dp))
 
                                 if (!isHebrewInputMode) {
-                                    // Gregorian Pickers (Day, Month, Year)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        // Day Picker
-                                        NumberWheelPicker(
+                                        NumberField(
                                             label = strings.dayLabel,
                                             value = gDay,
                                             range = 1..daysInGregorianMonth,
                                             onValueChange = { gDay = it },
                                             modifier = Modifier.weight(1f)
                                         )
-                                        // Month Picker
-                                        NumberWheelPicker(
+                                        MonthDropdown(
                                             label = strings.monthLabel,
-                                            value = gMonth,
-                                            range = 1..12,
-                                            onValueChange = { gMonth = it },
-                                            modifier = Modifier.weight(1f)
+                                            selected = gMonth,
+                                            options = (1..12).toList(),
+                                            nameOf = { gregorianMonthNames[it - 1] },
+                                            onSelected = { gMonth = it },
+                                            modifier = Modifier.weight(1.7f)
                                         )
-                                        // Year Picker
-                                        NumberWheelPicker(
+                                        NumberField(
                                             label = strings.yearLabel,
                                             value = gYear,
-                                            range = 1920..2040,
+                                            range = 1900..2100,
                                             onValueChange = { gYear = it },
-                                            modifier = Modifier.weight(1.3f)
+                                            modifier = Modifier.weight(1.2f)
                                         )
                                     }
                                 } else {
-                                    // Hebrew Pickers (Day, Month, Year)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        // Hebrew Day Picker (with Hebrew letters)
-                                        HebrewDayPicker(
+                                        NumberField(
                                             label = strings.dayLabel,
-                                            selectedDay = hDay,
-                                            onDaySelected = { hDay = it },
+                                            value = hDay,
+                                            range = 1..HebrewCalendarEngine.getDaysInMonth(hYear, hMonth),
+                                            onValueChange = { hDay = it },
+                                            supporting = HebrewCalendarEngine.formatHebrewNumber(hDay),
                                             modifier = Modifier.weight(1f)
                                         )
-                                        // Hebrew Month Picker
-                                        HebrewMonthPicker(
+                                        MonthDropdown(
                                             label = strings.monthLabel,
-                                            selectedMonth = hMonth,
-                                            onMonthSelected = { hMonth = it },
-                                            isLeap = HebrewCalendarEngine.isLeapYear(hYear),
-                                            isHe = strings.isHe,
-                                            modifier = Modifier.weight(1.5f)
+                                            selected = hMonth,
+                                            options = hebrewMonthOptions,
+                                            nameOf = {
+                                                HebrewCalendarEngine.getHebrewMonthName(
+                                                    it,
+                                                    HebrewCalendarEngine.isLeapYear(hYear),
+                                                    strings.isHe
+                                                )
+                                            },
+                                            onSelected = { hMonth = it },
+                                            modifier = Modifier.weight(1.7f)
                                         )
-                                        // Hebrew Year Picker
-                                        HebrewYearPicker(
+                                        NumberField(
                                             label = strings.yearLabel,
-                                            selectedYear = hYear,
-                                            onYearSelected = { hYear = it },
+                                            value = hYear,
+                                            range = 5600..5900,
+                                            onValueChange = { hYear = it },
+                                            supporting = HebrewCalendarEngine.formatHebrewNumber(hYear),
                                             modifier = Modifier.weight(1.2f)
                                         )
                                     }
@@ -700,10 +730,18 @@ fun AddEditEventDialog(
                                         )
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = if (!isHebrewInputMode) currentHebrewDateInfo.formattedHe else "${currentHebrewDateInfo.gregorianDay}/${currentHebrewDateInfo.gregorianMonth}/${currentHebrewDateInfo.gregorianYear}",
+                                            text = if (!isHebrewInputMode) currentHebrewDateInfo.formattedHe else currentHebrewDateInfo.gregorianFormatted,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        // The weekday is the cheapest sanity check on a converted
+                                        // date: people remember "it was a Sunday".
+                                        Text(
+                                            text = strings.weekdayName(currentHebrewDateInfo.dayOfWeek),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                         if (currentHebrewDateInfo.isLeapYear) {
                                             Text(
@@ -945,6 +983,79 @@ fun AddEditEventDialog(
                                             )
                                         )
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    // Colour
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = strings.colorLabel,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    EventColor.entries.forEach { option ->
+                                        val selected = eventColor == option
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(option.argb))
+                                                .border(
+                                                    width = if (selected) 3.dp else 1.dp,
+                                                    color = if (selected) {
+                                                        MaterialTheme.colorScheme.onSurface
+                                                    } else {
+                                                        MaterialTheme.colorScheme.outlineVariant
+                                                    },
+                                                    shape = CircleShape
+                                                )
+                                                .clickable { eventColor = option }
+                                                .semantics {
+                                                    contentDescription = if (option == EventColor.DEFAULT) {
+                                                        strings.colorDefault
+                                                    } else {
+                                                        option.name
+                                                    }
+                                                    this.selected = selected
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (selected) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (eventColor == EventColor.DEFAULT) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = strings.colorDefault,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -1456,303 +1567,114 @@ fun AddEditEventDialog(
     }
 }
 
+/**
+ * A number you type, rather than scroll to.
+ *
+ * The dialogs this replaces opened their list at the top, so choosing a birth year meant
+ * scrolling past a hundred rows every single time.
+ *
+ * The field owns its text so a value can be typed digit by digit: "1993" passes through "1",
+ * "19" and "199", none of which are valid years. Out-of-range text is simply not committed, and
+ * is corrected on focus loss rather than fighting the keyboard mid-entry.
+ */
 @Composable
-fun NumberWheelPicker(
+private fun NumberField(
     label: String,
     value: Int,
     range: IntRange,
     onValueChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    supporting: String? = null
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var text by rememberSaveable { mutableStateOf(value.toString()) }
+    var focused by remember { mutableStateOf(false) }
+    val maxDigits = range.last.toString().length
+
+    // Follow the value when something else changes it: a mode switch, a month clamp, a prefill.
+    LaunchedEffect(value) {
+        if (text.toIntOrNull() != value) text = value.toString()
+    }
+
+    val parsed = text.toIntOrNull()
+    val isError = parsed == null || parsed !in range
 
     Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Surface(
+        OutlinedTextField(
+            value = text,
+            onValueChange = { raw ->
+                text = raw.filter(Char::isDigit).take(maxDigits)
+                text.toIntOrNull()?.takeIf { it in range }?.let(onValueChange)
+            },
+            label = { Text(label, maxLines = 1) },
+            isError = isError,
+            singleLine = true,
+            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Next
+            ),
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
-        ) {
-            Text(
-                text = value.toString(),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 10.dp)
-            )
-        }
-
-        if (expanded) {
-            AlertDialog(
-                onDismissRequest = { expanded = false },
-                shape = RoundedCornerShape(24.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                title = { Text(label) },
-                text = {
-                    val values = remember(range) { range.toList() }
-                    // Open on the current value instead of at the top of the list.
-                    val listState = rememberLazyListState(
-                        initialFirstVisibleItemIndex = values.indexOf(value).coerceAtLeast(0)
-                    )
-                    LazyColumn(state = listState, modifier = Modifier.height(240.dp)) {
-                        items(values) { num ->
-                            Text(
-                                text = num.toString(),
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (num == value) FontWeight.Bold else FontWeight.Normal,
-                                color = if (num == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onValueChange(num)
-                                        expanded = false
-                                    }
-                                    .padding(vertical = 8.dp, horizontal = 12.dp)
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { expanded = false }, shape = RoundedCornerShape(50)) { Text("OK") }
+                .onFocusChanged { state ->
+                    if (focused && !state.isFocused && isError) text = value.toString()
+                    focused = state.isFocused
                 }
+        )
+        if (supporting != null && !isError) {
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp)
             )
         }
     }
 }
 
+/** Months are a short, named list, so a dropdown beats typing a number. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HebrewDayPicker(
+private fun MonthDropdown(
     label: String,
-    selectedDay: Int,
-    onDaySelected: (Int) -> Unit,
+    selected: Int,
+    options: List<Int>,
+    nameOf: (Int) -> String,
+    onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Surface(
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = nameOf(selected),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label, maxLines = 1) },
+            singleLine = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
-                .clickable { expanded = true }
-        ) {
-            Text(
-                text = HebrewCalendarEngine.formatHebrewNumber(selectedDay),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 10.dp)
-            )
-        }
-
-        if (expanded) {
-            AlertDialog(
-                onDismissRequest = { expanded = false },
-                shape = RoundedCornerShape(24.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                title = { Text(label) },
-                text = {
-                    val listState = rememberLazyListState(
-                        initialFirstVisibleItemIndex = (selectedDay - 1).coerceAtLeast(0)
-                    )
-                    LazyColumn(state = listState, modifier = Modifier.height(240.dp)) {
-                        items((1..30).toList()) { d ->
-                            val hebrewStr = HebrewCalendarEngine.formatHebrewNumber(d)
-                            Text(
-                                text = "$hebrewStr ($d)",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (d == selectedDay) FontWeight.Bold else FontWeight.Normal,
-                                color = if (d == selectedDay) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onDaySelected(d)
-                                        expanded = false
-                                    }
-                                    .padding(vertical = 8.dp, horizontal = 12.dp)
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { expanded = false }, shape = RoundedCornerShape(50)) { Text("OK") }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun HebrewMonthPicker(
-    label: String,
-    selectedMonth: Int,
-    onMonthSelected: (Int) -> Unit,
-    isLeap: Boolean,
-    isHe: Boolean,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    val months = remember(isLeap) {
-        if (isLeap) {
-            listOf(
-                JewishDate.TISHREI, JewishDate.CHESHVAN, JewishDate.KISLEV, JewishDate.TEVES,
-                JewishDate.SHEVAT, JewishDate.ADAR, JewishDate.ADAR_II, JewishDate.NISSAN,
-                JewishDate.IYAR, JewishDate.SIVAN, JewishDate.TAMMUZ, JewishDate.AV, JewishDate.ELUL
-            )
-        } else {
-            listOf(
-                JewishDate.TISHREI, JewishDate.CHESHVAN, JewishDate.KISLEV, JewishDate.TEVES,
-                JewishDate.SHEVAT, JewishDate.ADAR, JewishDate.NISSAN, JewishDate.IYAR,
-                JewishDate.SIVAN, JewishDate.TAMMUZ, JewishDate.AV, JewishDate.ELUL
-            )
-        }
-    }
-
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        Surface(
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }
-        ) {
-            Text(
-                text = HebrewCalendarEngine.getHebrewMonthName(selectedMonth, isLeap, isHe),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 10.dp)
-            )
-        }
-
-        if (expanded) {
-            AlertDialog(
-                onDismissRequest = { expanded = false },
-                shape = RoundedCornerShape(24.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                title = { Text(label) },
-                text = {
-                    val listState = rememberLazyListState(
-                        initialFirstVisibleItemIndex = months.indexOf(selectedMonth).coerceAtLeast(0)
-                    )
-                    LazyColumn(state = listState, modifier = Modifier.height(260.dp)) {
-                        items(months) { m ->
-                            val mName = HebrewCalendarEngine.getHebrewMonthName(m, isLeap, isHe)
-                            Text(
-                                text = mName,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (m == selectedMonth) FontWeight.Bold else FontWeight.Normal,
-                                color = if (m == selectedMonth) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onMonthSelected(m)
-                                        expanded = false
-                                    }
-                                    .padding(vertical = 8.dp, horizontal = 12.dp)
-                            )
-                        }
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(nameOf(option)) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = { expanded = false }, shape = RoundedCornerShape(50)) { Text("OK") }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun HebrewYearPicker(
-    label: String,
-    selectedYear: Int,
-    onYearSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val years = remember { (5600..5850).toList() }
-
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Surface(
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }
-        ) {
-            Text(
-                text = "${HebrewCalendarEngine.formatHebrewNumber(selectedYear)}",
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 10.dp)
-            )
-        }
-
-        if (expanded) {
-            AlertDialog(
-                onDismissRequest = { expanded = false },
-                shape = RoundedCornerShape(24.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                title = { Text(label) },
-                text = {
-                    val listState = rememberLazyListState(
-                        initialFirstVisibleItemIndex = years.indexOf(selectedYear).coerceAtLeast(0)
-                    )
-                    LazyColumn(state = listState, modifier = Modifier.height(260.dp)) {
-                        items(years) { y ->
-                            val yName = HebrewCalendarEngine.formatHebrewNumber(y)
-                            Text(
-                                text = "$yName ($y)",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (y == selectedYear) FontWeight.Bold else FontWeight.Normal,
-                                color = if (y == selectedYear) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onYearSelected(y)
-                                        expanded = false
-                                    }
-                                    .padding(vertical = 8.dp, horizontal = 12.dp)
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { expanded = false }, shape = RoundedCornerShape(50)) { Text("OK") }
-                }
-            )
+                )
+            }
         }
     }
 }

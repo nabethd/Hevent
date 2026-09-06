@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.domain.calendar.GoogleCalendarCloudManager
 import com.example.domain.calendar.SyncLabels
 import com.example.domain.model.CalculatedOccurrence
+import com.example.domain.model.EventColor
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,7 +38,7 @@ class GoogleCalendarCloudManagerTest {
     )
 
     private fun body(reminder: Int? = null) = JSONObject(
-        manager.eventJson("יום הולדת אמא", occurrence, "hcs-abc123", labels, reminder, null)
+        manager.eventJson("יום הולדת אמא", occurrence, "hcs-abc123", labels, reminder, null, null)
     )
 
     // ---------- the handle that makes deletion possible ----------
@@ -64,7 +65,7 @@ class GoogleCalendarCloudManagerTest {
     fun `end date rolls over a month boundary`() {
         val endOfMonth = occurrence.copy(gregorianYear = 2026, gregorianMonth = 10, gregorianDay = 31)
         val json = JSONObject(
-            manager.eventJson("x", endOfMonth, "hcs-1", labels, null, null)
+            manager.eventJson("x", endOfMonth, "hcs-1", labels, null, null, null)
         )
         assertEquals("2026-10-31", json.getJSONObject("start").getString("date"))
         assertEquals("2026-11-01", json.getJSONObject("end").getString("date"))
@@ -103,12 +104,37 @@ class GoogleCalendarCloudManagerTest {
     fun `description is built from the supplied labels, not hardcoded text`() {
         val english = SyncLabels(hebrewDateLabel = "Hebrew date", createdBy = "Made by the app")
         val json = JSONObject(
-            manager.eventJson("Birthday", occurrence, "hcs-1", english, null, "Leap year: Adar II")
+            manager.eventJson("Birthday", occurrence, "hcs-1", english, null, null, "Leap year: Adar II")
         )
         val description = json.getString("description")
         assertTrue(description.startsWith("Hebrew date: "))
         assertTrue(description.contains("Leap year: Adar II"))
         assertTrue(description.contains("Made by the app"))
+    }
+
+    // ---------- colour ----------
+
+    @Test
+    fun `colorId is sent only when a colour was chosen`() {
+        // The API takes an index into its own palette, not an RGB value, so the default must be
+        // omitted entirely rather than sent as some approximation of the calendar's colour.
+        assertFalse(body().has("colorId"))
+
+        val coloured = JSONObject(
+            manager.eventJson(
+                "Birthday", occurrence, "hcs-1", labels, null,
+                EventColor.TOMATO.googleColorId, null
+            )
+        )
+        assertEquals("11", coloured.getString("colorId"))
+    }
+
+    @Test
+    fun `the default colour has no google id`() {
+        assertEquals(null, EventColor.DEFAULT.googleColorId)
+        EventColor.entries.filter { it != EventColor.DEFAULT }.forEach {
+            assertTrue("${it.name} needs a colorId", it.googleColorId != null)
+        }
     }
 
     // ---------- retry classification ----------

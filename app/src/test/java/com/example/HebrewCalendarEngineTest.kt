@@ -377,3 +377,44 @@ class SingleOccurrenceTest {
         assertEquals(JewishDate.ADAR, occ.targetHebrewMonth)
     }
 }
+
+/** The weekday shown beside a converted date, which is how users sanity-check it. */
+class WeekdayTest {
+
+    @Test
+    fun `weekday matches the civil date`() {
+        // 13 October 1993 was a Wednesday.
+        val info = HebrewCalendarEngine.fromGregorian(1993, 10, 13)
+        assertEquals(java.util.Calendar.WEDNESDAY, info.dayOfWeek)
+    }
+
+    @Test
+    fun `after sunset keeps the weekday of the date entered`() {
+        // The Hebrew date moves forward, but the user typed the 13th and it was a Wednesday.
+        val info = HebrewCalendarEngine.fromGregorian(1993, 10, 13, afterSunset = true)
+        assertEquals(java.util.Calendar.WEDNESDAY, info.dayOfWeek)
+        assertEquals(29, info.hebrewDay)
+    }
+
+    @Test
+    fun `occurrences carry their own weekday`() {
+        val occ = HebrewCalendarEngine.singleOccurrence(5787, JewishDate.KISLEV, 15)
+        val info = HebrewCalendarEngine.fromHebrew(5787, JewishDate.KISLEV, 15)
+        assertEquals(info.dayOfWeek, occ.dayOfWeek)
+        assertTrue(occ.dayOfWeek in 1..7)
+    }
+
+    @Test
+    fun `a Hebrew date never falls on a weekday it cannot`() {
+        // Yom Kippur (10 Tishrei) can never be a Friday or Sunday — a classic sanity check
+        // that the whole conversion chain is sound.
+        for (year in 5780..5820) {
+            val info = HebrewCalendarEngine.fromHebrew(year, JewishDate.TISHREI, 10)
+            assertTrue(
+                "10 Tishrei $year fell on ${info.dayOfWeek}",
+                info.dayOfWeek != java.util.Calendar.FRIDAY &&
+                    info.dayOfWeek != java.util.Calendar.SUNDAY
+            )
+        }
+    }
+}

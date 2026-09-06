@@ -241,6 +241,7 @@ class GoogleCalendarCloudManager(private val context: Context) {
         syncTag: String,
         labels: SyncLabels,
         reminderMinutes: Int? = null,
+        googleColorId: String? = null,
         noteFor: (CalculatedOccurrence) -> String? = { null }
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
@@ -249,7 +250,9 @@ class GoogleCalendarCloudManager(private val context: Context) {
             for (chunk in occurrences.chunked(CONCURRENCY)) {
                 inserted += chunk.map { occ ->
                     async {
-                        val body = eventJson(eventTitle, occ, syncTag, labels, reminderMinutes, noteFor(occ))
+                        val body = eventJson(
+                            eventTitle, occ, syncTag, labels, reminderMinutes, googleColorId, noteFor(occ)
+                        )
                         try {
                             if (request("POST", url, accessToken, body).isSuccess) 1 else 0
                         } catch (e: Exception) {
@@ -328,6 +331,7 @@ class GoogleCalendarCloudManager(private val context: Context) {
         syncTag: String,
         labels: SyncLabels,
         reminderMinutes: Int?,
+        googleColorId: String?,
         note: String?
     ): String {
         // Locale.US: a locale with non-ASCII digits would emit a date the API rejects.
@@ -366,6 +370,8 @@ class GoogleCalendarCloudManager(private val context: Context) {
                     JSONObject().put(PROP_SYNC_ID, syncTag).put(PROP_APP, APP_MARKER)
                 )
             )
+            // colorId is an index into Google's fixed event palette, not an RGB value.
+            if (googleColorId != null) put("colorId", googleColorId)
             if (reminderMinutes != null) {
                 put(
                     "reminders",

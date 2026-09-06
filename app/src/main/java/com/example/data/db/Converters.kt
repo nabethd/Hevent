@@ -1,6 +1,7 @@
 package com.example.data.db
 
 import androidx.room.TypeConverter
+import com.example.domain.model.EventColor
 import com.example.domain.model.EventType
 import com.example.domain.model.LeapYearRule
 import com.example.domain.model.RecurrenceType
@@ -16,6 +17,9 @@ class Converters {
 
     @TypeConverter fun recurrenceToString(value: RecurrenceType): String = value.name
     @TypeConverter fun stringToRecurrence(value: String?): RecurrenceType = RecurrenceType.fromId(value)
+
+    @TypeConverter fun eventColorToString(value: EventColor): String = value.name
+    @TypeConverter fun stringToEventColor(value: String?): EventColor = EventColor.fromId(value)
 
     @TypeConverter fun leapRuleToString(value: LeapYearRule): String = value.name
     @TypeConverter fun stringToLeapRule(value: String?): LeapYearRule = LeapYearRule.fromId(value)

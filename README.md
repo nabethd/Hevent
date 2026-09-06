@@ -17,6 +17,8 @@ covered by [unit tests](app/src/test/java/com/example/HebrewCalendarEngineTest.k
 - **After-sunset toggle** — the Hebrew day begins at nightfall, so an event after sunset belongs to
   the following Hebrew day. Without this a yahrzeit is observed a day early.
 - Optional reminders, written as calendar alarms and as `VALARM` in exported files
+- A colour per event, from Google Calendar's own palette
+- The weekday is shown beside every converted date, so a conversion can be sanity-checked
 - Edit an existing event; its calendar entries are rewritten to match
 - Sync to any writable device calendar, or create a dedicated local one
 - Or create a calendar **inside your Google account** and sync there via the Calendar REST API,
@@ -147,4 +149,8 @@ Until the client exists, the sign-in button compiles and fails at runtime.
   while a Google account is connected; otherwise the app says so rather than pretending it
   succeeded.
 - **`GoogleAuthUtil` is the deprecated auth path.** Credential Manager is the current one.
+- **Per-event colour on the device calendar is best effort.** The cloud path sets `colorId`, which
+  is well defined. `Events.EVENT_COLOR` is honoured by some providers and silently ignored by
+  others, which only accept `EVENT_COLOR_KEY` — and that needs a `Colors` row only a sync adapter
+  can create.
 - **No instrumented tests.** Unit and Robolectric coverage only.

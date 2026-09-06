@@ -171,6 +171,7 @@ class CalendarSyncManager(private val context: Context) {
         syncTag: String,
         labels: SyncLabels,
         reminderMinutes: Int? = null,
+        colorArgb: Int? = null,
         noteFor: (CalculatedOccurrence) -> String? = { null }
     ): Int = withContext(Dispatchers.IO) {
         if (!hasCalendarPermission() || occurrences.isEmpty()) return@withContext 0
@@ -187,7 +188,7 @@ class CalendarSyncManager(private val context: Context) {
                 eventOpIndices.add(index)
                 ops.add(
                     eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc)
-                        .toInsertOp(hasReminder = reminderMinutes != null)
+                        .toInsertOp(hasReminder = reminderMinutes != null, colorArgb = colorArgb)
                 )
                 ops.add(extendedProp(index, APP_TAG_NAME, APP_TAG_VALUE))
                 ops.add(extendedProp(index, CUSTOM_EVENT_ID_NAME, syncTag))
@@ -201,7 +202,7 @@ class CalendarSyncManager(private val context: Context) {
             } catch (e: Exception) {
                 Log.w(TAG, "Batch with extended properties failed; retrying without them", e)
                 inserted += insertWithoutExtendedProperties(
-                    calendarId, eventTitle, chunk, syncTag, labels, reminderMinutes, noteFor, utc
+                    calendarId, eventTitle, chunk, syncTag, labels, reminderMinutes, colorArgb, noteFor, utc
                 )
             }
         }
@@ -215,6 +216,7 @@ class CalendarSyncManager(private val context: Context) {
         syncTag: String,
         labels: SyncLabels,
         reminderMinutes: Int?,
+        colorArgb: Int?,
         noteFor: (CalculatedOccurrence) -> String?,
         utc: Calendar
     ): Int {
@@ -222,7 +224,7 @@ class CalendarSyncManager(private val context: Context) {
         for (occ in chunk) {
             try {
                 val values = eventRow(calendarId, eventTitle, occ, syncTag, labels, noteFor(occ), utc)
-                    .toContentValues(hasReminder = reminderMinutes != null)
+                    .toContentValues(hasReminder = reminderMinutes != null, colorArgb = colorArgb)
                 val uri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
                 if (uri != null) {
                     inserted++
@@ -289,7 +291,7 @@ class CalendarSyncManager(private val context: Context) {
         )
     }
 
-    private fun EventRow.toInsertOp(hasReminder: Boolean): ContentProviderOperation =
+    private fun EventRow.toInsertOp(hasReminder: Boolean, colorArgb: Int?): ContentProviderOperation =
         ContentProviderOperation.newInsert(CalendarContract.Events.CONTENT_URI)
             .withValue(CalendarContract.Events.CALENDAR_ID, calendarId)
             .withValue(CalendarContract.Events.TITLE, title)
@@ -301,9 +303,12 @@ class CalendarSyncManager(private val context: Context) {
             .withValue(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
             .withValue(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
             .withValue(CalendarContract.Events.HAS_ALARM, if (hasReminder) 1 else 0)
+            // Best effort: some providers only honour EVENT_COLOR_KEY, which needs a Colors row
+            // that only a sync adapter can create. Ignoring it costs nothing.
+            .apply { if (colorArgb != null) withValue(CalendarContract.Events.EVENT_COLOR, colorArgb) }
             .build()
 
-    private fun EventRow.toContentValues(hasReminder: Boolean): ContentValues = ContentValues().apply {
+    private fun EventRow.toContentValues(hasReminder: Boolean, colorArgb: Int?): ContentValues = ContentValues().apply {
         put(CalendarContract.Events.CALENDAR_ID, calendarId)
         put(CalendarContract.Events.TITLE, title)
         put(CalendarContract.Events.DESCRIPTION, description)
@@ -314,6 +319,7 @@ class CalendarSyncManager(private val context: Context) {
         put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
         put(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
         put(CalendarContract.Events.HAS_ALARM, if (hasReminder) 1 else 0)
+        if (colorArgb != null) put(CalendarContract.Events.EVENT_COLOR, colorArgb)
     }
 
     private fun reminderOp(eventBackRef: Int, minutes: Int): ContentProviderOperation =

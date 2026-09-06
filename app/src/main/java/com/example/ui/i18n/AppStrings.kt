@@ -6,6 +6,7 @@ import android.content.res.Resources
 import com.example.R
 import com.example.domain.model.CalculatedOccurrence
 import com.example.domain.model.OccurrenceNote
+import java.text.DateFormatSymbols
 import java.util.Locale
 
 /**
@@ -59,6 +60,8 @@ class AppStrings(val lang: AppLanguage, private val res: Resources) {
     val cancel: String = res.getString(R.string.cancel)
     val clearAll: String = res.getString(R.string.clear_all)
     val connectedCalendarsTitle: String = res.getString(R.string.connected_calendars_title)
+    val colorLabel: String = res.getString(R.string.color_label)
+    val colorDefault: String = res.getString(R.string.color_default)
     val convertedEquivalent: String = res.getString(R.string.converted_equivalent)
     val createCalendarBtn: String = res.getString(R.string.create_calendar_btn)
     val createCalendarSubtitle: String = res.getString(R.string.create_calendar_subtitle)
@@ -222,6 +225,15 @@ class AppStrings(val lang: AppLanguage, private val res: Resources) {
 
     fun eventsDeletedFromCalendar(count: Int): String =
         res.getQuantityString(R.plurals.events_deleted_from_calendar, count, count)
+
+    /**
+     * Weekday name in the active language, from [java.util.Calendar.DAY_OF_WEEK].
+     *
+     * Shown next to a converted date so the user can sanity-check it: people often remember an
+     * anniversary was "on a Sunday" more reliably than they remember the Hebrew date.
+     */
+    fun weekdayName(dayOfWeek: Int): String =
+        DateFormatSymbols(Locale(lang.code)).weekdays.getOrNull(dayOfWeek).orEmpty()
 
     /** Human text for a calculated occurrence's structured notes. */
     fun noteText(occ: CalculatedOccurrence): String? = occ.notes

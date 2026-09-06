@@ -704,7 +704,7 @@ fun HebrewEventCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "${occ.gregorianDay}/${occ.gregorianMonth}/${occ.gregorianYear}",
+                                text = "${strings.weekdayName(occ.dayOfWeek)} • ${occ.gregorianDateFormatted}",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface

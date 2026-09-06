@@ -339,10 +339,20 @@ object HebrewCalendarEngine {
             gregorianDay = gDay,
             gregorianDateFormatted = String.format(Locale.US, "%02d/%02d/%04d", gDay, gMonth, gYear),
             isLeapYear = targetIsLeap,
+            dayOfWeek = weekdayOf(gYear, gMonth, gDay),
             notes = listOfNotNull(ruleNote, edgeNote),
             adjustedFromDay = adjustedFrom
         )
     }
+
+    /**
+     * Weekday of a civil date. Derived from the Gregorian values rather than from the Hebrew
+     * object, so an after-sunset conversion still reports the weekday of the date entered.
+     */
+    private fun weekdayOf(year: Int, month: Int, day: Int): Int = Calendar.getInstance().apply {
+        clear()
+        set(year, month - 1, day)
+    }.get(Calendar.DAY_OF_WEEK)
 
     private fun startOfToday(): Long = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0)
@@ -380,7 +390,8 @@ object HebrewCalendarEngine {
             gregorianDay = gDay,
             gregorianMonth = gMonth,
             gregorianYear = gYear,
-            isLeapYear = isLeap
+            isLeapYear = isLeap,
+            dayOfWeek = weekdayOf(gYear, gMonth, gDay)
         )
     }
 

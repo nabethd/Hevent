@@ -13,7 +13,9 @@ data class HebrewDateInfo(
     val gregorianDay: Int,
     val gregorianMonth: Int, // 1-12
     val gregorianYear: Int,
-    val isLeapYear: Boolean
+    val isLeapYear: Boolean,
+    /** [java.util.Calendar.DAY_OF_WEEK]: 1 = Sunday. Of the civil date, not the Hebrew one. */
+    val dayOfWeek: Int = java.util.Calendar.SUNDAY
 ) {
     /** e.g. 13/10/1993 — the civil date, as opposed to [formattedEn] which is the Hebrew date in Latin script. */
     val gregorianFormatted: String
@@ -31,6 +33,8 @@ data class CalculatedOccurrence(
     val gregorianDay: Int,
     val gregorianDateFormatted: String,
     val isLeapYear: Boolean,
+    /** [java.util.Calendar.DAY_OF_WEEK]: 1 = Sunday. */
+    val dayOfWeek: Int = java.util.Calendar.SUNDAY,
     /** Structured, language-free. The UI turns these into text — the engine must not know a locale. */
     val notes: List<OccurrenceNote> = emptyList(),
     /** Set when the origin day does not exist in the target month and was moved. */
@@ -115,5 +119,35 @@ enum class ReminderOption(val minutes: Int?) {
     companion object {
         fun fromMinutes(minutes: Int?): ReminderOption =
             entries.firstOrNull { it.minutes == minutes } ?: NONE
+    }
+}
+
+/**
+ * Event colour.
+ *
+ * The palette is Google Calendar's own eleven event colours, because that is the only set the
+ * Calendar API accepts — `colorId` is an index into it, not a free RGB value. Using the same
+ * palette everywhere keeps the app, the device calendar and the cloud calendar showing one colour
+ * rather than three approximations of it.
+ *
+ * [DEFAULT] means "whatever the calendar itself uses", which is the behaviour when nothing is
+ * chosen.
+ */
+enum class EventColor(val googleColorId: String?, val argb: Long) {
+    DEFAULT(null, 0xFF1A56DB),
+    LAVENDER("1", 0xFF7986CB),
+    SAGE("2", 0xFF33B679),
+    GRAPE("3", 0xFF8E24AA),
+    FLAMINGO("4", 0xFFE67C73),
+    BANANA("5", 0xFFF6BF26),
+    TANGERINE("6", 0xFFF4511E),
+    PEACOCK("7", 0xFF039BE5),
+    GRAPHITE("8", 0xFF616161),
+    BLUEBERRY("9", 0xFF3F51B5),
+    BASIL("10", 0xFF0B8043),
+    TOMATO("11", 0xFFD50000);
+
+    companion object {
+        fun fromId(id: String?): EventColor = entries.firstOrNull { it.name == id } ?: DEFAULT
     }
 }

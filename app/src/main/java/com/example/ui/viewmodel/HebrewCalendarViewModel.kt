@@ -16,6 +16,7 @@ import com.example.domain.hebrew.HebrewCalendarEngine
 import com.example.domain.ics.IcsEvent
 import com.example.domain.ics.IcsExporter
 import com.example.domain.model.CalculatedOccurrence
+import com.example.domain.model.EventColor
 import com.example.domain.model.EventType
 import com.example.domain.model.HebrewDateInfo
 import com.example.domain.model.LeapYearRule
@@ -198,7 +199,8 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
         val leapYearRule: LeapYearRule = LeapYearRule.STANDARD_ADAR_II,
         val yearsCount: Int = 20,
         val afterSunset: Boolean = false,
-        val reminderMinutes: Int? = null
+        val reminderMinutes: Int? = null,
+        val eventColor: EventColor = EventColor.DEFAULT
     )
 
     fun stageEvent(draft: EventDraft) { _stagedEvents.value = _stagedEvents.value + draft }
@@ -287,6 +289,8 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             syncTag = syncTag,
                             labels = syncLabels(),
                             reminderMinutes = draft.reminderMinutes,
+                            colorArgb = draft.eventColor.takeIf { it != EventColor.DEFAULT }
+                                ?.argb?.toInt(),
                             noteFor = { localStrings.noteText(it) }
                         )
                         totalSynced += syncedCount
@@ -310,6 +314,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             occurrenceCount = occurrences.size,
                             afterSunset = draft.afterSunset,
                             reminderMinutes = draft.reminderMinutes,
+                            eventColor = draft.eventColor,
                             syncTag = syncTag,
                             targetCalendarId = targetCalendarId.takeUnless { isIcsOnly },
                             targetCalendarName = targetCalendarName.takeUnless { isIcsOnly },
@@ -397,6 +402,8 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                         syncTag = syncTag,
                         labels = syncLabels(),
                         reminderMinutes = draft.reminderMinutes,
+                        colorArgb = draft.eventColor.takeIf { it != EventColor.DEFAULT }
+                            ?.argb?.toInt(),
                         noteFor = { localStrings.noteText(it) }
                     )
                 }
@@ -418,6 +425,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                         occurrenceCount = occurrences.size,
                         afterSunset = draft.afterSunset,
                         reminderMinutes = draft.reminderMinutes,
+                        eventColor = draft.eventColor,
                         syncTag = syncTag,
                         targetCalendarId = targetCalendarId.takeUnless { isIcsOnly },
                         targetCalendarName = targetCalendarName.takeUnless { isIcsOnly },
@@ -621,6 +629,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                         syncTag = syncTag,
                         labels = syncLabels(),
                         reminderMinutes = draft.reminderMinutes,
+                        googleColorId = draft.eventColor.googleColorId,
                         noteFor = { localStrings.noteText(it) }
                     )
                     val syncedCount = insertResult.getOrDefault(0)
@@ -643,6 +652,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             occurrenceCount = occurrences.size,
                             afterSunset = draft.afterSunset,
                             reminderMinutes = draft.reminderMinutes,
+                            eventColor = draft.eventColor,
                             syncTag = syncTag,
                             cloudCalendarId = newCalendar.id,
                             targetCalendarId = null,

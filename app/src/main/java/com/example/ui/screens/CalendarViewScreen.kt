@@ -461,7 +461,7 @@ fun CalendarViewScreen(
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "${selectedDayInfo.gregorianDay}/${selectedDayInfo.gregorianMonth}/${selectedDayInfo.gregorianYear}",
+                                text = "${strings.weekdayName(selectedDayInfo.dayOfWeek)} • ${selectedDayInfo.gregorianFormatted}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
