@@ -168,6 +168,7 @@
     <string name="one_time_notice">The event is created on the chosen date only, with no repeats.</string>
     <string name="color_label">Event colour</string>
     <string name="color_default">Calendar default</string>
+    <string name="delete_calendar_leftover">Event deleted from the app, but its calendar entries were not found. They may already be gone, or calendar permission was revoked.</string>
     <plurals name="in_days">
         <item quantity="one">In %d day</item>
         <item quantity="other">In %d days</item>

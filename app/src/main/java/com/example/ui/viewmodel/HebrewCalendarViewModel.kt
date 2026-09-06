@@ -465,8 +465,10 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
     fun deleteEvent(event: HebrewEventEntity) {
         viewModelScope.launch {
             val localStrings = strings
+            val hadDeviceEvents = event.targetCalendarId != null && event.syncedEventsCount > 0
+            var removedFromDevice = 0
             if (calendarSyncManager.hasCalendarPermission()) {
-                calendarSyncManager.deleteSyncedEvents(
+                removedFromDevice = calendarSyncManager.deleteSyncedEvents(
                     syncTag = event.syncTag,
                     title = event.title,
                     calendarId = event.targetCalendarId
@@ -474,10 +476,22 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
             }
             val cloudCleared = deleteCloudEvents(event)
             repository.deleteEvent(event)
+
+            // The count used to be discarded, so the app reported success even when it had
+            // removed nothing — which looked exactly like delete being broken.
+            val deviceLeftover = hadDeviceEvents && removedFromDevice == 0
+            Log.d(
+                TAG,
+                "Deleted '${event.title}': device=$removedFromDevice " +
+                    "(expected ${event.syncedEventsCount}), cloudCleared=$cloudCleared"
+            )
             _events.send(
                 UiEvent.Message(
-                    if (cloudCleared) localStrings.deleteSuccess
-                    else localStrings.deleteCloudLeftover
+                    when {
+                        deviceLeftover -> localStrings.deleteCalendarLeftover
+                        !cloudCleared -> localStrings.deleteCloudLeftover
+                        else -> localStrings.deleteSuccess
+                    }
                 )
             )
         }

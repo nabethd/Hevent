@@ -167,6 +167,7 @@
     <string name="one_time_notice">האירוע ייווצר בתאריך שנבחר בלבד, ללא חזרות.</string>
     <string name="color_label">צבע האירוע</string>
     <string name="color_default">ברירת המחדל של היומן</string>
+    <string name="delete_calendar_leftover">האירוע נמחק מהאפליקציה, אך המופעים ביומן לא נמצאו. ייתכן שהם נמחקו כבר, או שהרשאת היומן בוטלה.</string>
     <plurals name="in_days">
         <item quantity="one">בעוד יום</item>
         <item quantity="two">בעוד יומיים</item>

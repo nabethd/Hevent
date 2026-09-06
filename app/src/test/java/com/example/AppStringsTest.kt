@@ -107,9 +107,10 @@ class AppStringsTest {
     fun `weekday names come out in the active language`() {
         // Sanity-checking a converted date is the whole point, so the weekday must be readable.
         assertEquals("יום ראשון", he.weekdayName(java.util.Calendar.SUNDAY))
-        // CLDR renders Saturday as "יום שבת"; conversational Hebrew usually just says "שבת".
-        // Left as the platform gives it rather than second-guessing the locale data.
-        assertEquals("יום שבת", he.weekdayName(java.util.Calendar.SATURDAY))
+        // Locale data gives "יום שבת"; Hebrew speakers say "שבת", so that one is overridden.
+        assertEquals("שבת", he.weekdayName(java.util.Calendar.SATURDAY))
+        assertEquals("יום שישי", he.weekdayName(java.util.Calendar.FRIDAY))
+        assertEquals("Saturday", en.weekdayName(java.util.Calendar.SATURDAY))
         assertEquals("Sunday", en.weekdayName(java.util.Calendar.SUNDAY))
         assertEquals("Wednesday", en.weekdayName(java.util.Calendar.WEDNESDAY))
     }

@@ -7,6 +7,7 @@ import com.example.R
 import com.example.domain.model.CalculatedOccurrence
 import com.example.domain.model.OccurrenceNote
 import java.text.DateFormatSymbols
+import java.util.Calendar
 import java.util.Locale
 
 /**
@@ -76,6 +77,7 @@ class AppStrings(val lang: AppLanguage, private val res: Resources) {
     val deleteAllByNameTitle: String = res.getString(R.string.delete_all_by_name_title)
     val googleCalendarCreateFailed: String = res.getString(R.string.google_calendar_create_failed)
     val googleSyncFailed: String = res.getString(R.string.google_sync_failed)
+    val deleteCalendarLeftover: String = res.getString(R.string.delete_calendar_leftover)
     val deleteCloudLeftover: String = res.getString(R.string.delete_cloud_leftover)
     fun googleCalendarReady(name: String): String = res.getString(R.string.google_calendar_ready, name)
     val deleteEventConfirmTitle: String = res.getString(R.string.delete_event_confirm_title)
@@ -232,8 +234,11 @@ class AppStrings(val lang: AppLanguage, private val res: Resources) {
      * Shown next to a converted date so the user can sanity-check it: people often remember an
      * anniversary was "on a Sunday" more reliably than they remember the Hebrew date.
      */
-    fun weekdayName(dayOfWeek: Int): String =
-        DateFormatSymbols(Locale(lang.code)).weekdays.getOrNull(dayOfWeek).orEmpty()
+    fun weekdayName(dayOfWeek: Int): String {
+        // Locale data renders Saturday as "יום שבת"; Hebrew speakers say "שבת".
+        if (isHe && dayOfWeek == Calendar.SATURDAY) return "שבת"
+        return DateFormatSymbols(Locale(lang.code)).weekdays.getOrNull(dayOfWeek).orEmpty()
+    }
 
     /** Human text for a calculated occurrence's structured notes. */
     fun noteText(occ: CalculatedOccurrence): String? = occ.notes

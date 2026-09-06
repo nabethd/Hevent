@@ -357,20 +357,34 @@ class CalendarSyncManager(private val context: Context) {
         if (!hasCalendarPermission()) return@withContext 0
 
         try {
+            // 1. The precise handle: our per-event extended property.
             val taggedIds = if (syncTag != null) {
                 findEventIdsByExtendedProperty(CUSTOM_EVENT_ID_NAME, syncTag, calendarId, title = null)
             } else {
                 findEventIdsByExtendedProperty(APP_TAG_NAME, APP_TAG_VALUE, calendarId, title = title)
             }
-            if (taggedIds.isNotEmpty()) return@withContext deleteByIds(taggedIds)
-
-            // Provider dropped our extended properties — fall back to the description marker.
-            val marker = if (syncTag != null) {
-                "[$CUSTOM_EVENT_ID_NAME:$syncTag]"
-            } else {
-                "[$APP_TAG_NAME:$APP_TAG_VALUE]"
+            if (taggedIds.isNotEmpty()) {
+                val deleted = deleteByIds(taggedIds)
+                Log.d(TAG, "Deleted $deleted rows by extended property")
+                return@withContext deleted
             }
-            deleteByDescriptionMarker(marker, title, calendarId)
+
+            // 2. Extended properties are writable only by a sync adapter on some providers, so the
+            // rows may carry the marker in their description instead.
+            if (syncTag != null) {
+                val byTag = deleteByDescriptionMarker("[$CUSTOM_EVENT_ID_NAME:$syncTag]", title, calendarId)
+                if (byTag > 0) {
+                    Log.d(TAG, "Deleted $byTag rows by per-event description marker")
+                    return@withContext byTag
+                }
+            }
+
+            // 3. Last resort for rows written before per-event tagging existed: anything this app
+            // created with this title in this calendar. Still our marker, so a user's own events
+            // are never candidates.
+            val byApp = deleteByDescriptionMarker("[$APP_TAG_NAME:$APP_TAG_VALUE]", title, calendarId)
+            Log.d(TAG, "Deleted $byApp rows by app description marker (orphan cleanup)")
+            byApp
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete synced events", e)
             0
