@@ -8,7 +8,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [HebrewEventEntity::class], version = 3, exportSchema = true)
+@Database(entities = [HebrewEventEntity::class], version = 4, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun hebrewEventDao(): HebrewEventDao
@@ -42,6 +42,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 -> v4: remember the Google Calendar an event was synced to, so it can be undone. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE hebrew_events ADD COLUMN cloudCalendarId TEXT")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -54,7 +61,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "hebrew_calendar_sync.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

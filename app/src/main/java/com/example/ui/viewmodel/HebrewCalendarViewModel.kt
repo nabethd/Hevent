@@ -373,6 +373,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                         calendarId = original.targetCalendarId
                     )
                 }
+                deleteCloudEvents(original)
 
                 val occurrences = occurrencesFor(
                     draft.recurrenceType,
@@ -432,7 +433,24 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    /** Deletes one event and only the calendar rows it created. */
+    /**
+     * Removes the cloud events this app created for [event], if it was synced to Google.
+     *
+     * Returns false when the work could not be done — not signed in, or the API refused — so the
+     * caller can tell the user the cloud copies are still there instead of implying a clean delete.
+     */
+    private suspend fun deleteCloudEvents(event: HebrewEventEntity): Boolean {
+        val calendarId = event.cloudCalendarId ?: return true
+        val syncTag = event.syncTag ?: return false
+        val account = _googleAccount.value?.account ?: return false
+        val token = googleCloudManager.getAccessToken(account).getOrElse {
+            Log.w(TAG, "Cannot delete cloud events: no token", it)
+            return false
+        }
+        return googleCloudManager.deleteEventsBySyncTag(token, calendarId, syncTag).isSuccess
+    }
+
+    /** Deletes one event and only the calendar entries it created, on the device and in the cloud. */
     fun deleteEvent(event: HebrewEventEntity) {
         viewModelScope.launch {
             val localStrings = strings
@@ -443,8 +461,14 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                     calendarId = event.targetCalendarId
                 )
             }
+            val cloudCleared = deleteCloudEvents(event)
             repository.deleteEvent(event)
-            _events.send(UiEvent.Message(localStrings.deleteSuccess))
+            _events.send(
+                UiEvent.Message(
+                    if (cloudCleared) localStrings.deleteSuccess
+                    else localStrings.deleteCloudLeftover
+                )
+            )
         }
     }
 
@@ -471,6 +495,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                     )
                 }
             }
+            for (event in matches) deleteCloudEvents(event)
             repository.deleteEventsByIds(matches.map { it.id })
             _events.send(
                 UiEvent.Message(localStrings.eventsDeletedFromCalendar(deletedFromCalendar))
@@ -550,17 +575,23 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                         onComplete(false)
                         return@launch
                     }
-                    _events.send(UiEvent.Message("${localStrings.googleAuthFailed}: ${ex?.message}"))
+                    Log.e(TAG, "Google auth failed", ex)
+                    _events.send(UiEvent.Message(localStrings.googleAuthFailed))
                     _isSyncing.value = false
                     onComplete(false)
                     return@launch
                 }
                 val token = tokenResult.getOrThrow()
 
-                val createResult = googleCloudManager.createCalendar(token, calendarName)
+                // Reuse a calendar of the same name rather than adding another one each sync.
+                val createResult = googleCloudManager.findOrCreateCalendar(
+                    accessToken = token,
+                    summary = calendarName,
+                    description = localStrings.createdBy
+                )
                 if (createResult.isFailure) {
-                    val ex = createResult.exceptionOrNull()
-                    _events.send(UiEvent.Message("שגיאה ביצירת יומן Google: ${ex?.message}"))
+                    Log.e(TAG, "Cloud calendar create/lookup failed", createResult.exceptionOrNull())
+                    _events.send(UiEvent.Message(localStrings.googleCalendarCreateFailed))
                     _isSyncing.value = false
                     onComplete(false)
                     return@launch
@@ -585,6 +616,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                         eventTitle = draft.title,
                         occurrences = occurrences,
                         syncTag = syncTag,
+                        labels = syncLabels(),
                         reminderMinutes = draft.reminderMinutes,
                         noteFor = { localStrings.noteText(it) }
                     )
@@ -609,9 +641,10 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                             afterSunset = draft.afterSunset,
                             reminderMinutes = draft.reminderMinutes,
                             syncTag = syncTag,
+                            cloudCalendarId = newCalendar.id,
                             targetCalendarId = null,
                             targetCalendarName = newCalendar.summary,
-                            isSyncedToCalendar = true,
+                            isSyncedToCalendar = syncedCount > 0,
                             syncedEventsCount = syncedCount
                         )
                     )
@@ -623,7 +656,7 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                 onComplete(true)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed syncing to Google Cloud", e)
-                _events.send(UiEvent.Message("שגיאה בסנכרון לענן: ${e.message}"))
+                _events.send(UiEvent.Message(localStrings.googleSyncFailed))
                 onComplete(false)
             } finally {
                 _isSyncing.value = false
@@ -655,25 +688,30 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
                         onComplete(null)
                         return@launch
                     }
-                    _events.send(UiEvent.Message("${localStrings.googleAuthFailed}: ${ex?.message}"))
+                    Log.e(TAG, "Google auth failed", ex)
+                    _events.send(UiEvent.Message(localStrings.googleAuthFailed))
                     onComplete(null)
                     return@launch
                 }
                 val token = tokenResult.getOrThrow()
 
-                val createResult = googleCloudManager.createCalendar(token, calendarName)
+                val createResult = googleCloudManager.findOrCreateCalendar(
+                    accessToken = token,
+                    summary = calendarName,
+                    description = localStrings.createdBy
+                )
                 if (createResult.isSuccess) {
                     val cal = createResult.getOrThrow()
-                    _events.send(UiEvent.Message("היומן '${cal.summary}' נוצר בהצלחה ב-Google Calendar!"))
+                    _events.send(UiEvent.Message(localStrings.googleCalendarReady(cal.summary)))
                     onComplete(cal)
                 } else {
-                    val ex = createResult.exceptionOrNull()
-                    _events.send(UiEvent.Message("שגיאה ביצירת יומן: ${ex?.message}"))
+                    Log.e(TAG, "Cloud calendar create/lookup failed", createResult.exceptionOrNull())
+                    _events.send(UiEvent.Message(localStrings.googleCalendarCreateFailed))
                     onComplete(null)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error creating cloud calendar", e)
-                _events.send(UiEvent.Message("שגיאה: ${e.message}"))
+                _events.send(UiEvent.Message(localStrings.googleCalendarCreateFailed))
                 onComplete(null)
             }
         }

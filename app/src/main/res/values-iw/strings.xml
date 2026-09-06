@@ -158,6 +158,10 @@
     <string name="export_events_count">ייצא %1$d אירועים (ICS)</string>
     <string name="sync_events_count">סנכרן %1$d אירועים ליומן</string>
     <string name="day_has_events">יש אירועים</string>
+    <string name="google_calendar_create_failed">יצירת יומן Google נכשלה</string>
+    <string name="google_sync_failed">הסנכרון ל-Google נכשל</string>
+    <string name="google_calendar_ready">היומן ״%1$s״ מוכן ב-Google Calendar</string>
+    <string name="delete_cloud_leftover">האירוע נמחק, אך המופעים ביומן Google לא הוסרו. התחברו ל-Google ונסו שוב.</string>
     <plurals name="in_days">
         <item quantity="one">בעוד יום</item>
         <item quantity="two">בעוד יומיים</item>
@@ -186,7 +190,7 @@
     <string name="google_auth_failed">ההתחברות לחשבון Google נכשלה</string>
     <string name="google_cloud_section">יומן Google בענן</string>
     <string name="google_cloud_section_desc">התחבר עם חשבון Google כדי ליצור יומנים ייעודיים ולסנכרן תאריכים ישירות בענן</string>
-    <string name="recommended_action_badge">פעולה מומלצת ★</string>
+    <string name="recommended_action_badge">מומלץ</string>
     <string name="btn_create_and_sync">צור יומן וסנכרן תאריכים</string>
     <string name="btn_create_and_sync_count">צור יומן וסנכרן %1$d אירועים</string>
 </resources>

@@ -47,6 +47,12 @@ data class HebrewEventEntity(
      * Null for rows written before this field existed.
      */
     val syncTag: String? = null,
+    /**
+     * Google Calendar id when the event was synced to the cloud. Without it the events written
+     * there could never be located again, so deleting the event in the app would leave its
+     * occurrences in the user's Google Calendar permanently.
+     */
+    val cloudCalendarId: String? = null,
     // Sync information
     val targetCalendarId: Long? = null,
     val targetCalendarName: String? = null,

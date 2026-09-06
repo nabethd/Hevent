@@ -19,6 +19,8 @@ covered by [unit tests](app/src/test/java/com/example/HebrewCalendarEngineTest.k
 - Optional reminders, written as calendar alarms and as `VALARM` in exported files
 - Edit an existing event; its calendar entries are rewritten to match
 - Sync to any writable device calendar, or create a dedicated local one
+- Or create a calendar **inside your Google account** and sync there via the Calendar REST API,
+  so the dates appear on every device signed into that account
 - Export to `.ics` for any other calendar app
 - Hebrew/English UI with full RTL support, switchable without a restart
 - Light and dark themes, following the system setting
@@ -86,7 +88,8 @@ base64 -i debug.keystore | pbcopy   # paste into Settings > Secrets > Actions
 ui/            Compose screens, theme, the AppStrings resource facade
 res/values/    English strings; Hebrew in res/values-iw/ (note: 'iw', not 'he')
 ui/viewmodel/  HebrewCalendarViewModel — the single source of UI state
-domain/        HebrewCalendarEngine (dates), CalendarSyncManager (provider), IcsExporter
+domain/        HebrewCalendarEngine (dates), CalendarSyncManager (device provider),
+               GoogleCalendarCloudManager (Calendar REST API), IcsExporter
 data/          Room database, entity, DAO, repository
 ```
 
@@ -101,12 +104,33 @@ as both an `ExtendedProperties` entry and a marker in the description. Deletion 
 There is deliberately no title-only fallback: an earlier version had one, and it would delete
 identically-named events the user had created themselves.
 
+**Cloud events are tagged in `extendedProperties.private`.** That field is queryable through the
+`privateExtendedProperty` parameter, and it is the only thing that makes a cloud event findable
+again — and therefore deletable. A description marker is not enough. Bulk writes also retry
+429/5xx and rate-limit 403s with backoff, because a century of occurrences is hundreds of requests.
+
 **All-day events are stored at midnight UTC** with `EVENT_TIMEZONE = "UTC"`. Anything else shifts
 the day for users away from GMT.
 
 **Hebrew resources live in `res/values-iw/`, not `values-he/`.** `iw` is the legacy ISO code, and
 it is the qualifier Android's resource system expects. Getting it wrong fails silently — the app
 just falls back to English — so `AppStringsTest` asserts that Hebrew actually resolves.
+
+## Google Calendar setup
+
+Cloud sync needs an OAuth client of its own; the code alone is not enough. In a Google Cloud
+project: enable the Calendar API, add the `.../auth/calendar` scope to the consent screen, and
+create an **Android** OAuth client for the package `com.aistudio.hebrewcalendar.zrqk` with the
+SHA-1 of the signing key.
+
+OAuth binds to that certificate, which is why `DEBUG_KEYSTORE_BASE64` is required rather than
+optional — a per-build key changes the SHA-1 and sign-in stops working. Get the fingerprint with:
+
+```bash
+keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | grep SHA1
+```
+
+Until the client exists, the sign-in button compiles and fails at runtime.
 
 ## Known gaps
 
@@ -119,4 +143,8 @@ just falls back to English — so `AppStringsTest` asserts that Hebrew actually 
 - **The in-app language switch is not the system per-app language.** It builds a configuration
   context by hand so the toggle can apply without a restart. Android 13's per-app language setting
   would be more idiomatic but needs `appcompat` for anything below API 33.
+- **Cloud deletion needs you signed in.** Removing an app event deletes its cloud entries only
+  while a Google account is connected; otherwise the app says so rather than pretending it
+  succeeded.
+- **`GoogleAuthUtil` is the deprecated auth path.** Credential Manager is the current one.
 - **No instrumented tests.** Unit and Robolectric coverage only.
