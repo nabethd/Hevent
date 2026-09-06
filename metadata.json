@@ -2,5 +2,5 @@
   "name": "Hebrew Calendar Sync",
   "description": "Add recurring Hebrew calendar events for birthdays, anniversaries, and yahrzeits with 100-year Gregorian conversion, direct calendar sync, ICS export, and bilingual RTL support.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -64,6 +64,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -115,6 +117,9 @@ fun AddEditEventDialog(
     prefillDate: HebrewDateInfo?,
     /** Non-null puts the dialog in edit mode, seeded from this row. */
     editingEvent: HebrewEventEntity? = null,
+    googleAccount: GoogleSignInAccount? = null,
+    onRequestGoogleSignIn: () -> Unit = {},
+    onSaveBatchToGoogleCloud: ((List<HebrewCalendarViewModel.EventDraft>, String) -> Unit)? = null,
     onRequestCalendarPermission: () -> Unit,
     onCreateNewCalendar: suspend (String) -> Long?,
     onStageEvent: (HebrewCalendarViewModel.EventDraft) -> Unit,
@@ -164,14 +169,9 @@ fun AddEditEventDialog(
     var showHalachicInfo by rememberSaveable { mutableStateOf(false) }
 
     var syncDestination by rememberSaveable {
-        mutableStateOf(
-            when {
-                hasCalendarPermission && availableCalendars.isNotEmpty() -> "EXISTING_CAL"
-                hasCalendarPermission -> "NEW_CAL"
-                else -> "ICS_ONLY"
-            }
-        )
+        mutableStateOf("GOOGLE_CLOUD_NEW")
     }
+    var googleCloudCalendarName by rememberSaveable { mutableStateOf(strings.googleCloudDefaultName) }
     var selectedCalendarId by rememberSaveable {
         mutableLongStateOf(availableCalendars.firstOrNull()?.id ?: 0L)
     }
@@ -265,6 +265,20 @@ fun AddEditEventDialog(
         val draft = currentDraft()
         if (draft == null && (isEditing || stagedEvents.isEmpty())) {
             titleError = strings.fillTitleError
+            return
+        }
+
+        if (syncDestination == "GOOGLE_CLOUD_NEW") {
+            if (googleAccount == null) {
+                onRequestGoogleSignIn()
+                return
+            }
+            if (googleCloudCalendarName.isBlank()) {
+                return
+            }
+            val finalDraft = if (isEditing) null else draft
+            val draftsToSync = stagedEvents + listOfNotNull(finalDraft)
+            onSaveBatchToGoogleCloud?.invoke(draftsToSync, googleCloudCalendarName.trim())
             return
         }
 
@@ -970,7 +984,111 @@ fun AddEditEventDialog(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Option 1: Existing Calendar (Recommended for Google Calendar)
+                            // Option 0: Google Cloud Create & Sync (Recommended)
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (syncDestination == "GOOGLE_CLOUD_NEW")
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                                ),
+                                shape = RoundedCornerShape(16.dp),
+                                border = if (syncDestination == "GOOGLE_CLOUD_NEW")
+                                    BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                                else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { syncDestination = "GOOGLE_CLOUD_NEW" }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        RadioButton(
+                                            selected = syncDestination == "GOOGLE_CLOUD_NEW",
+                                            onClick = { syncDestination = "GOOGLE_CLOUD_NEW" }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Text(
+                                                    strings.destGoogleCloudNew,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    shape = RoundedCornerShape(50)
+                                                ) {
+                                                    Text(
+                                                        text = strings.recommendedActionBadge,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onPrimary,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = strings.destGoogleCloudNewDesc,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    if (syncDestination == "GOOGLE_CLOUD_NEW") {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        if (googleAccount == null) {
+                                            Button(
+                                                onClick = onRequestGoogleSignIn,
+                                                shape = RoundedCornerShape(50),
+                                                modifier = Modifier.fillMaxWidth().testTag("google_sign_in_button")
+                                            ) {
+                                                Icon(Icons.Default.AccountCircle, contentDescription = null)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(strings.googleConnectBtn)
+                                            }
+                                        } else {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column {
+                                                    Text(
+                                                        text = strings.googleConnectedAs,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Text(
+                                                        text = googleAccount.email.orEmpty(),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+                                                TextButton(onClick = onRequestGoogleSignIn) {
+                                                    Text(strings.googleChangeAccount, style = MaterialTheme.typography.labelSmall)
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            OutlinedTextField(
+                                                value = googleCloudCalendarName,
+                                                onValueChange = { googleCloudCalendarName = it },
+                                                label = { Text(strings.googleCloudCalendarNameLabel) },
+                                                singleLine = true,
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().testTag("google_cloud_calendar_name_input")
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Option 1: Existing Calendar (Device / Google)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1283,6 +1401,10 @@ fun AddEditEventDialog(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 val count = stagedEvents.size + (if (eventTitle.isNotBlank()) 1 else 0)
                                 val syncText = when {
+                                    syncDestination == "GOOGLE_CLOUD_NEW" -> {
+                                        if (count > 1) strings.btnCreateAndSyncCount(count)
+                                        else strings.btnCreateAndSync
+                                    }
                                     count > 1 && syncDestination == "ICS_ONLY" ->
                                         strings.exportEventsCount(count)
                                     count > 1 ->

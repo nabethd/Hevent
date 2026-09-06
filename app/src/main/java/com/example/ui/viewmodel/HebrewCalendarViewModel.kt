@@ -33,6 +33,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.UserRecoverableAuthException
+import com.example.domain.calendar.GoogleCalendarCloudManager
+import com.example.domain.calendar.GoogleCloudCalendar
+
 
 /** One-shot effects. A StateFlow would swallow two identical messages in a row. */
 sealed interface UiEvent {
@@ -54,6 +60,20 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
         HebrewEventRepository(AppDatabase.getInstance(application).hebrewEventDao())
 
     val calendarSyncManager: CalendarSyncManager = CalendarSyncManager(application)
+    val googleCloudManager = GoogleCalendarCloudManager(application)
+    private val _googleAccount = MutableStateFlow<GoogleSignInAccount?>(null)
+    val googleAccount: StateFlow<GoogleSignInAccount?> = _googleAccount.asStateFlow()
+
+    fun setGoogleAccount(account: GoogleSignInAccount?) {
+        _googleAccount.value = account
+    }
+
+    fun signOutGoogle(client: GoogleSignInClient) {
+        client.signOut().addOnCompleteListener {
+            _googleAccount.value = null
+        }
+    }
+
 
     private val _events = Channel<UiEvent>(Channel.BUFFERED)
     val uiEvents = _events.receiveAsFlow()
@@ -501,5 +521,161 @@ class HebrewCalendarViewModel(application: Application) : AndroidViewModel(appli
             noteFor = { localStrings.noteText(it) }
         )
         IcsExporter.createShareIntent(getApplication(), fileName, ics)
+    }
+
+    fun saveBatchEventsToGoogleCloud(
+        drafts: List<EventDraft>,
+        calendarName: String,
+        onNeedsAuth: (Intent) -> Unit,
+        onComplete: (Boolean) -> Unit
+    ) {
+        val account = _googleAccount.value?.account ?: run {
+            viewModelScope.launch {
+                _events.send(UiEvent.Message(strings.googleAuthFailed))
+                onComplete(false)
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _isSyncing.value = true
+            val localStrings = strings
+            try {
+                val tokenResult = googleCloudManager.getAccessToken(account)
+                if (tokenResult.isFailure) {
+                    val ex = tokenResult.exceptionOrNull()
+                    if (ex is UserRecoverableAuthException) {
+                        ex.intent?.let { onNeedsAuth(it) }
+                        _isSyncing.value = false
+                        onComplete(false)
+                        return@launch
+                    }
+                    _events.send(UiEvent.Message("${localStrings.googleAuthFailed}: ${ex?.message}"))
+                    _isSyncing.value = false
+                    onComplete(false)
+                    return@launch
+                }
+                val token = tokenResult.getOrThrow()
+
+                val createResult = googleCloudManager.createCalendar(token, calendarName)
+                if (createResult.isFailure) {
+                    val ex = createResult.exceptionOrNull()
+                    _events.send(UiEvent.Message("שגיאה ביצירת יומן Google: ${ex?.message}"))
+                    _isSyncing.value = false
+                    onComplete(false)
+                    return@launch
+                }
+                val newCalendar = createResult.getOrThrow()
+
+                var totalSynced = 0
+                for (draft in drafts) {
+                    val occurrences = occurrencesFor(
+                        draft.recurrenceType,
+                        draft.hebrewDateInfo.hebrewDay,
+                        draft.hebrewDateInfo.hebrewMonth,
+                        draft.hebrewDateInfo.hebrewYear,
+                        draft.leapYearRule,
+                        draft.yearsCount.coerceAtLeast(1)
+                    )
+                    val syncTag = CalendarSyncManager.newSyncTag()
+
+                    val insertResult = googleCloudManager.insertEvents(
+                        accessToken = token,
+                        calendarId = newCalendar.id,
+                        eventTitle = draft.title,
+                        occurrences = occurrences,
+                        syncTag = syncTag,
+                        reminderMinutes = draft.reminderMinutes,
+                        noteFor = { localStrings.noteText(it) }
+                    )
+                    val syncedCount = insertResult.getOrDefault(0)
+                    totalSynced += syncedCount
+
+                    repository.insertEvent(
+                        HebrewEventEntity(
+                            title = draft.title,
+                            eventType = draft.eventType,
+                            recurrenceType = draft.recurrenceType,
+                            hebrewDay = draft.hebrewDateInfo.hebrewDay,
+                            hebrewMonth = draft.hebrewDateInfo.hebrewMonth,
+                            hebrewYear = draft.hebrewDateInfo.hebrewYear,
+                            hebrewDateFormatted = draft.hebrewDateInfo.formattedHe,
+                            gregorianDay = draft.hebrewDateInfo.gregorianDay,
+                            gregorianMonth = draft.hebrewDateInfo.gregorianMonth,
+                            gregorianYear = draft.hebrewDateInfo.gregorianYear,
+                            leapYearRule = draft.leapYearRule,
+                            yearsCount = draft.yearsCount,
+                            occurrenceCount = occurrences.size,
+                            afterSunset = draft.afterSunset,
+                            reminderMinutes = draft.reminderMinutes,
+                            syncTag = syncTag,
+                            targetCalendarId = null,
+                            targetCalendarName = newCalendar.summary,
+                            isSyncedToCalendar = true,
+                            syncedEventsCount = syncedCount
+                        )
+                    )
+                }
+
+                clearStagedEvents()
+                _events.send(UiEvent.Message(localStrings.googleSyncSuccessCount(totalSynced)))
+                _events.send(UiEvent.Saved)
+                onComplete(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed syncing to Google Cloud", e)
+                _events.send(UiEvent.Message("שגיאה בסנכרון לענן: ${e.message}"))
+                onComplete(false)
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
+
+    fun createStandaloneGoogleCloudCalendar(
+        calendarName: String,
+        onNeedsAuth: (Intent) -> Unit,
+        onComplete: (GoogleCloudCalendar?) -> Unit
+    ) {
+        val account = _googleAccount.value?.account ?: run {
+            viewModelScope.launch {
+                _events.send(UiEvent.Message(strings.googleAuthFailed))
+                onComplete(null)
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            val localStrings = strings
+            try {
+                val tokenResult = googleCloudManager.getAccessToken(account)
+                if (tokenResult.isFailure) {
+                    val ex = tokenResult.exceptionOrNull()
+                    if (ex is UserRecoverableAuthException) {
+                        ex.intent?.let { onNeedsAuth(it) }
+                        onComplete(null)
+                        return@launch
+                    }
+                    _events.send(UiEvent.Message("${localStrings.googleAuthFailed}: ${ex?.message}"))
+                    onComplete(null)
+                    return@launch
+                }
+                val token = tokenResult.getOrThrow()
+
+                val createResult = googleCloudManager.createCalendar(token, calendarName)
+                if (createResult.isSuccess) {
+                    val cal = createResult.getOrThrow()
+                    _events.send(UiEvent.Message("היומן '${cal.summary}' נוצר בהצלחה ב-Google Calendar!"))
+                    onComplete(cal)
+                } else {
+                    val ex = createResult.exceptionOrNull()
+                    _events.send(UiEvent.Message("שגיאה ביצירת יומן: ${ex?.message}"))
+                    onComplete(null)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating cloud calendar", e)
+                _events.send(UiEvent.Message("שגיאה: ${e.message}"))
+                onComplete(null)
+            }
+        }
     }
 }

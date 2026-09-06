@@ -61,6 +61,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.widget.Toast
+import android.app.Activity
+import com.example.domain.calendar.GoogleCalendarCloudManager
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import com.example.ui.i18n.AppLanguage
 import com.example.ui.i18n.AppStrings
 import com.example.ui.screens.AddEditEventDialog
@@ -100,6 +107,43 @@ fun HebrewCalendarApp(
     val events by viewModel.events.collectAsStateWithLifecycle()
     val calendars by viewModel.calendars.collectAsStateWithLifecycle()
     val hasCalendarPermission by viewModel.hasCalendarPermission.collectAsStateWithLifecycle()
+    val googleAccount by viewModel.googleAccount.collectAsStateWithLifecycle()
+
+    val googleSignInOptions = remember {
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(Scope(GoogleCalendarCloudManager.CALENDAR_SCOPE))
+            .build()
+    }
+    val googleSignInClient = remember(context, googleSignInOptions) {
+        GoogleSignIn.getClient(context, googleSignInOptions)
+    }
+
+    LaunchedEffect(Unit) {
+        val account = GoogleSignIn.getLastSignedInAccount(context)
+        viewModel.setGoogleAccount(account)
+    }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            viewModel.setGoogleAccount(account)
+        } catch (e: Exception) {
+            Toast.makeText(context, strings.googleAuthFailed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val authRecoveryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val account = GoogleSignIn.getLastSignedInAccount(context)
+            viewModel.setGoogleAccount(account)
+        }
+    }
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val stagedEvents by viewModel.stagedEvents.collectAsStateWithLifecycle()
     val prefillDate by viewModel.prefillDate.collectAsStateWithLifecycle()
@@ -310,6 +354,16 @@ fun HebrewCalendarApp(
                         events = events,
                         availableCalendars = calendars,
                         hasCalendarPermission = hasCalendarPermission,
+                        googleAccount = googleAccount,
+                        onRequestGoogleSignIn = { googleSignInLauncher.launch(googleSignInClient.signInIntent) },
+                        onSignOutGoogle = { viewModel.signOutGoogle(googleSignInClient) },
+                        onCreateStandaloneGoogleCalendar = { calName ->
+                            viewModel.createStandaloneGoogleCloudCalendar(
+                                calendarName = calName,
+                                onNeedsAuth = { intent -> authRecoveryLauncher.launch(intent) },
+                                onComplete = {}
+                            )
+                        },
                         onRequestCalendarPermission = ::requestCalendarPermission,
                         onCreateNewCalendar = viewModel::createNewHebrewCalendar,
                         onDeleteByName = viewModel::deleteEventsByName,
@@ -325,6 +379,22 @@ fun HebrewCalendarApp(
                         strings = strings,
                         availableCalendars = calendars,
                         hasCalendarPermission = hasCalendarPermission,
+                        googleAccount = googleAccount,
+                        onRequestGoogleSignIn = { googleSignInLauncher.launch(googleSignInClient.signInIntent) },
+                        onSaveBatchToGoogleCloud = { drafts, calName ->
+                            viewModel.saveBatchEventsToGoogleCloud(
+                                drafts = drafts,
+                                calendarName = calName,
+                                onNeedsAuth = { intent -> authRecoveryLauncher.launch(intent) },
+                                onComplete = { success ->
+                                    if (success) {
+                                        showAddDialog = false
+                                        editingEventId = null
+                                        viewModel.consumePrefillDate()
+                                    }
+                                }
+                            )
+                        },
                         isSyncing = isSyncing,
                         stagedEvents = stagedEvents,
                         prefillDate = prefillDate,

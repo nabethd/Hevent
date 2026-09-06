@@ -171,4 +171,20 @@
         <item quantity="one">%d event deleted from device calendar</item>
         <item quantity="other">%d events deleted from device calendar</item>
     </plurals>
+    <string name="dest_google_cloud_new">Create Calendar &amp; Sync Dates</string>
+    <string name="dest_google_cloud_new_desc">Recommended action: First creates a dedicated Google calendar, then syncs all recurring dates to it in the cloud</string>
+    <string name="google_cloud_step_notice">Single action: Creates a dedicated Google Calendar + syncs all Hebrew occurrences across years</string>
+    <string name="google_connect_btn">Sign in with Google</string>
+    <string name="google_connected_as">Connected as:</string>
+    <string name="google_change_account">Switch account</string>
+    <string name="google_cloud_calendar_name_label">New Google Calendar Name</string>
+    <string name="google_cloud_default_name">Hebrew Events</string>
+    <string name="google_sync_success">Calendar created in Google Calendar and synced to cloud!</string>
+    <string name="google_sync_success_count">Calendar created in Google Calendar and %1$d events synced!</string>
+    <string name="google_auth_failed">Google authentication failed</string>
+    <string name="google_cloud_section">Google Cloud Calendar</string>
+    <string name="google_cloud_section_desc">Connect with your Google account to create dedicated calendars and sync directly in the cloud</string>
+    <string name="recommended_action_badge">Recommended Action ★</string>
+    <string name="btn_create_and_sync">Create Calendar &amp; Sync Dates</string>
+    <string name="btn_create_and_sync_count">Create Calendar &amp; Sync %1$d Events</string>
 </resources>

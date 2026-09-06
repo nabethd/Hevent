@@ -91,6 +91,7 @@ dependencies {
   implementation(libs.kosherjava.zmanim)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.play.services.auth)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

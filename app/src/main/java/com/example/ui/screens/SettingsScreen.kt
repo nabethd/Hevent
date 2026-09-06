@@ -47,6 +47,9 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,6 +79,10 @@ fun SettingsScreen(
     hasCalendarPermission: Boolean = false,
     onRequestCalendarPermission: () -> Unit = {},
     onCreateNewCalendar: suspend (String) -> Long? = { null },
+    googleAccount: GoogleSignInAccount? = null,
+    onRequestGoogleSignIn: () -> Unit = {},
+    onSignOutGoogle: () -> Unit = {},
+    onCreateStandaloneGoogleCalendar: ((String) -> Unit)? = null,
     onDeleteByName: (String) -> Unit,
     onExportAllIcs: () -> Unit,
     modifier: Modifier = Modifier
@@ -87,6 +94,8 @@ fun SettingsScreen(
 
     var newCalendarName by remember { mutableStateOf("") }
     var isCreatingCalendar by remember { mutableStateOf(false) }
+    var googleCloudCalName by remember { mutableStateOf("") }
+    var isCreatingGoogleCloudCal by remember { mutableStateOf(false) }
     // Was a nullable String compared against a localised literal to decide its own colour, which
     // broke the moment the language changed.
     var calendarCreated by remember { mutableStateOf<Boolean?>(null) }
@@ -175,6 +184,130 @@ fun SettingsScreen(
                                 .weight(1f)
                                 .testTag("lang_english_btn")
                         )
+                    }
+                }
+            }
+        }
+
+        // Google Cloud Calendar Section
+        item {
+            ElevatedCard(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CloudDone,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = strings.googleCloudSection,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = strings.googleCloudSectionDesc,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    if (googleAccount == null) {
+                        Button(
+                            onClick = onRequestGoogleSignIn,
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.fillMaxWidth().testTag("settings_google_sign_in_button")
+                        ) {
+                            Icon(Icons.Default.AccountCircle, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(strings.googleConnectBtn)
+                        }
+                    } else {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = strings.googleConnectedAs,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = googleAccount.email.orEmpty(),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                TextButton(onClick = onSignOutGoogle) {
+                                    Text("התנתק", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "יצירת יומן נפרד ב-Google Calendar:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = googleCloudCalName,
+                                onValueChange = { googleCloudCalName = it },
+                                placeholder = { Text(strings.googleCloudDefaultName) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).testTag("settings_cloud_cal_name_input")
+                            )
+
+                            Button(
+                                onClick = {
+                                    val name = googleCloudCalName.ifBlank { strings.googleCloudDefaultName }
+                                    onCreateStandaloneGoogleCalendar?.invoke(name)
+                                    googleCloudCalName = ""
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                enabled = !isCreatingGoogleCloudCal,
+                                modifier = Modifier.testTag("settings_create_cloud_cal_button")
+                            ) {
+                                Text("צור")
+                            }
+                        }
                     }
                 }
             }

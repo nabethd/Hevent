@@ -173,4 +173,20 @@
         <item quantity="two">שני אירועים נמחקו מיומן המכשיר</item>
         <item quantity="other">%d אירועים נמחקו מיומן המכשיר</item>
     </plurals>
+    <string name="dest_google_cloud_new">צור יומן חדש וסנכרן תאריכים</string>
+    <string name="dest_google_cloud_new_desc">פעולה מומלצת: תחילה נוצר יומן ייעודי בחשבון Google, ולאחר מכן כל התאריכים מסונכרנים אליו ישירות בענן</string>
+    <string name="google_cloud_step_notice">בלחיצה אחת: יצירת יומן ייעודי בחשבון Google + סנכרון כל התאריכים לשנים קדימה</string>
+    <string name="google_connect_btn">התחבר באמצעות Google</string>
+    <string name="google_connected_as">מחובר לחשבון:</string>
+    <string name="google_change_account">החלף חשבון</string>
+    <string name="google_cloud_calendar_name_label">שם היומן החדש ב-Google Calendar</string>
+    <string name="google_cloud_default_name">אירועים עבריים</string>
+    <string name="google_sync_success">היומן נוצר ב-Google Calendar והאירועים סונכרנו לענן!</string>
+    <string name="google_sync_success_count">היומן נוצר ב-Google Calendar ו-%1$d אירועים סונכרנו לענן!</string>
+    <string name="google_auth_failed">ההתחברות לחשבון Google נכשלה</string>
+    <string name="google_cloud_section">יומן Google בענן</string>
+    <string name="google_cloud_section_desc">התחבר עם חשבון Google כדי ליצור יומנים ייעודיים ולסנכרן תאריכים ישירות בענן</string>
+    <string name="recommended_action_badge">פעולה מומלצת ★</string>
+    <string name="btn_create_and_sync">צור יומן וסנכרן תאריכים</string>
+    <string name="btn_create_and_sync_count">צור יומן וסנכרן %1$d אירועים</string>
 </resources>
